@@ -8,7 +8,37 @@
 #include <chrono>
 #include <assert.h>
 
+// TODO! implement half-sibs
+// TODO! randomly sampling founders
+// TODO! update all comments before functions
+
 using namespace std;
+
+////////////////////////////////////////////////////////////////////////////////
+// Used to store details about each simulation
+struct SimDetails {
+  SimDetails(char t, int nF, int nG, int *retain) {
+    type = t;
+    numFam = nF;
+    numGen = nG;
+    numSampsToRetain = retain;
+  }
+  // type: either 'f' for full sibs/cousins, 'h' for half sibs/cousins, or
+  // 'd' for double cousins
+  char type;
+  int numFam;
+  int numGen;
+  int *numSampsToRetain;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Used to store the genetic map
+struct PhysGeneticPos {
+  PhysGeneticPos(int p, double m1, double m2) {
+    physPos = p; mapPos[0] = m1; mapPos[1] = m2;
+  }
+  int physPos; double mapPos[2];
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store necessary details about the source and length of each segment:
@@ -23,31 +53,20 @@ struct Person {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Used to store the genetic map
-struct PhysGeneticPos {
-  PhysGeneticPos(int p, double m1, double m2) {
-    physPos = p; mapPos[0] = m1; mapPos[1] = m2;
-  }
-  int physPos; double mapPos[2];
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // Function decls
-void readDat(int *numSampsToRetain, int numGen, char *datFile);
+void readDat(vector<SimDetails> &simDetails, char *datFile);
 void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps);
-void simulate(Person ***generations[2], int *numSampsToRetain, int numGen,
-	      int numFam,
+int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      bool sexSpecificMaps);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap);
-void printBPs(Person ***generations[2], int *numSampsToRetain, int numGen,
-	      int numFam,
+void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *outFile);
-void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
-	     int numFam, char *inVCFfile, char *outVCFfile,
+void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap);
 template<typename T>
 void pop_front(vector<T> &vec);
@@ -60,7 +79,7 @@ exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  if (argc != 8) {
+  if (argc != 6) {
     printUsage(argv);
   }
 
@@ -75,54 +94,48 @@ int main(int argc, char **argv) {
   printf("Using random seed: %u\n\n", seed);
   randomGen.seed(seed);
 
-  int numFam = atoi(argv[1]);
-
-  int numGen = atoi(argv[2]);
-  // We'll save generated haplotypes for the indicated number of samples in the
-  // indicated generations. This information is indicated in the dat file read
-  // below. But we initially assume that we'll save 0
-  int *numSampsToRetain = new int[numGen];
-  for(int i = 0; i < numGen; i++)
-    numSampsToRetain[i] = 0;
-
-  readDat(numSampsToRetain, numGen, /*datFile=*/ argv[3]);
+  vector<SimDetails> simDetails;
+  readDat(simDetails, /*datFile=*/ argv[1]);
 
   vector< pair<char*, vector<PhysGeneticPos>* > > geneticMap;
   bool sexSpecificMaps;
-  readMap(geneticMap, /*mapFile=*/ argv[4], sexSpecificMaps);
+  readMap(geneticMap, /*mapFile=*/ argv[2], sexSpecificMaps);
 
-  // Besides the top-most generation, there are two sides to the pedigree, with
-  // element 0 in <generation> containing data from one side and element 1 the
-  // other.
-  // The second index (e.g., <g> in <generations[side][g]>) is the generation
-  // number.
-  // The third index is the sample number in the given generation
-  // The fourth index is the haplotype 0 or 1 of the given sample
-  Person ***generations[2];
+  // The first index is the pedigree number corresponding to the description of
+  // the pedigree to be simulated in the dat file
+  // The second index is the family: we replicate the same pedigree structure
+  // some number of times as specified in the dat file
+  // The third index is the side of the pedigree (0 or 1) -- in the second
+  // generation (generation index 1 here), two full or half siblings become the
+  // parents of each side
+  // The fourth index is the generation number (0-based)
+  // The fifth index is the individual number
+  Person *****theSamples;
 
   printf("Simulating... ");
   fflush(stdout);
-  simulate(generations, numSampsToRetain, numGen, numFam, geneticMap,
-	   sexSpecificMaps);
+  int totalFounderHaps = simulate(simDetails, theSamples, geneticMap,
+				  sexSpecificMaps);
   printf("done.\n");
 
   printf("Printing break points... ");
   fflush(stdout);
-  printBPs(generations, numSampsToRetain, numGen, numFam, geneticMap,
-	   /*outFile=*/ argv[7]);
+  printBPs(simDetails, theSamples, geneticMap, /*outFile=*/ argv[5]);
   printf("done.\n");
 
   printf("Generating VCF file... ");
   fflush(stdout);
-  makeVCF(generations, numSampsToRetain, numGen, numFam, /*inVCFfile=*/ argv[5],
-	  /*outVCFfile=*/ argv[6], geneticMap);
+  makeVCF(simDetails, theSamples, totalFounderHaps, /*inVCFfile=*/ argv[3],
+	  /*outVCFfile=*/ argv[4], geneticMap);
   printf("done.\n");
 
   return 0;
 }
 
-// Reads the number of samples to retain in each generation from the dat file
-void readDat(int *numSampsToRetain, int numGen, char *datFile) {
+// Reads in the pedigree formats from the dat file, including the type of the
+// pedigree (full, half, or double) and the number of samples to produce in
+// every generation
+void readDat(vector<SimDetails> &simDetails, char *datFile) {
   // open dat file:
   FILE *in = fopen(datFile, "r");
   if (!in) {
@@ -130,57 +143,109 @@ void readDat(int *numSampsToRetain, int numGen, char *datFile) {
     exit(1);
   }
 
+  // dat file contains information about how many samples to generate / store
+  // information for in some of the generations; we store this in an array
+  // with length equal to the number of generations to be simulated
+  int *curNumSampsToRetain = NULL;
+  int curNumGen = 0;
+
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
   const char *delim = " \t\n";
 
-  bool modifiedNumToRetain = false;
   int line = 0;
   while (getline(&buffer, &bytesRead, in) >= 0) {
     line++;
 
-    char *genNumStr, *numSampsStr, *saveptr;
-    genNumStr = strtok_r(buffer, delim, &saveptr);
-    numSampsStr = strtok_r(NULL, delim, &saveptr);
+    char *token, *saveptr;
+    token = strtok_r(buffer, delim, &saveptr);
 
-    if (genNumStr == NULL || numSampsStr == NULL) {
-      printf("ERROR: line number %d in dat file does not contain two fields\n",
+    if (token == NULL || token[0] == '#') {
+      // blank line or comment -- skip
+      continue;
+    }
+
+    if (strcmp(token, "full") == 0 || strcmp(token, "half") == 0 ||
+	strcmp(token, "double") == 0) {
+      // new type of pedigree
+      char *type = token;
+      char *numFamStr = strtok_r(NULL, delim, &saveptr);
+      char *numGenStr = strtok_r(NULL, delim, &saveptr);
+      if (numFamStr == NULL || numGenStr == NULL ||
+				      strtok_r(NULL, delim, &saveptr) != NULL) {
+	fprintf(stderr, "ERROR: line %d in dat: expect three fields for pedigree declaration:\n",
+		line);
+	fprintf(stderr, "       [full/half/double] [numFam] [numGen]\n");
+	exit(5);
+      }
+      int curNumFam = atoi(numFamStr);
+      curNumGen = atoi(numGenStr);
+      curNumSampsToRetain = new int[curNumGen];
+      for(int i = 0; i < curNumGen; i++)
+	curNumSampsToRetain[i] = 0;
+      simDetails.emplace_back(type[0], curNumFam, curNumGen,
+			      curNumSampsToRetain);
+      continue;
+    }
+
+    // line contains information about sample storage for the current pedigree
+    char *genNumStr = token;
+    char *numSampsStr = strtok_r(NULL, delim, &saveptr);
+
+    if (numSampsStr == NULL || strtok_r(NULL, delim, &saveptr) != NULL) {
+      printf("ERROR: improper line number %d in dat file: expected two fields\n",
 	      line);
     }
 
     int generation = atoi(genNumStr);
     int numSamps = atoi(numSampsStr);
 
-    if (generation < 2 || generation > numGen) { // TODO: document
-      fprintf(stderr, "ERROR: generation %d in dat file below 2 or above %d (max number of generations)\n",
-	      generation, numGen);
+    if (generation < 2 || generation > curNumGen) { // TODO: document
+      fprintf(stderr, "ERROR: line %d in dat: generation %d below 2 or above %d (max number\n",
+	      line, generation, curNumGen);
+      fprintf(stderr, "       of generations)\n");
       exit(1);
     }
     if (numSamps <= 0) {
-      fprintf(stderr, "ERROR: in generation %d, number of samples to simulate below 0\n",
-	      generation);
+      fprintf(stderr, "ERROR: line %d in dat: in generation %d, number of samples to simulate\n",
+	      line, generation);
+      fprintf(stderr, "       below 0\n");
       exit(2);
     }
 
     // subtract 1 because array is 0 based
-    if (numSampsToRetain[generation - 1] != 0) {
-      fprintf(stderr, "ERROR: multiple entries for generation %d in dat file\n",
-	      generation);
+    if (curNumSampsToRetain[generation - 1] != 0) {
+      fprintf(stderr, "ERROR: line %d in dat: multiple entries for generation %d\n",
+	      line, generation);
     }
-    numSampsToRetain[generation - 1] = numSamps;
-    modifiedNumToRetain = true;
+    curNumSampsToRetain[generation - 1] = numSamps;
   }
 
-  if (!modifiedNumToRetain) {
-    fprintf(stderr, "ERROR: need dat file with information about numbers of samples to retain\n");
+  for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
+    if (it->numSampsToRetain[ it->numGen - 1 ] == 0) {
+      // TODO: document
+      const char *typeName;
+      if (it->type == 'f')
+	typeName = "full";
+      else if (it->type == 'h')
+	typeName = "half";
+      else if (it->type == 'd')
+	typeName = "double";
+      else
+	typeName = "error";
+
+      fprintf(stderr, "ERROR: request to simulate '%s' type pedigree, %d families, %d generations\n",
+	      typeName, it->numFam, it->numGen);
+      fprintf(stderr, "       but no request print any samples from last generation (number %d)\n",
+	      it->numGen);
+      exit(4);
+    }
+  }
+
+  if (simDetails.size() == 0) {
+    fprintf(stderr, "ERROR: dat file does not contain pedigree descriptions;\n");
+    fprintf(stderr, "       nothing to simulate\n");
     exit(3);
-  }
-
-  if (numSampsToRetain[numGen-1] == 0) { // TODO: document
-    fprintf(stderr, "ERROR: request to simulate %d generations; must print data from last generation\n",
-	    numGen);
-    fprintf(stderr, "       modify either number of generations or dat file\n");
-    exit(4);
   }
 
   fclose(in);
@@ -249,145 +314,163 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
   fclose(in);
 }
 
-// Simulate data for each generation
-void simulate(Person ***generations[2], int *numSampsToRetain, int numGen,
-	      int numFam,
-	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      bool sexSpecificMaps) {
+// Simulate data for each specified pedigree type for the number of requested
+// families. Returns the number of founder haplotypes used to produce these
+// simulated samples.
+int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
+	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	     bool sexSpecificMaps) {
   // Note: throughout we use 0-based values for generations though the input
   // dat file is 1-based
 
-  // Make Person objects for all those we will simulate, assigning sex if
-  // <sexSpecificMaps> is true.
-  // Top-most generation:
+  int totalFounderHaps = 0;
+
+  // Make Person objects for the top-most generation:
   Person dad, mom;
   if (sexSpecificMaps)
     mom.sex = 1;
-  // this loop is setup to improve memory locality for each family
-  for (int fam = 0; fam < numFam; fam++) {
-    for(int side = 0; side < 2; side++) {
-      if (fam == 0)
-	generations[side] = new Person**[numFam];
-      generations[side][fam] = new Person*[numGen];
-    }
-  }
-  for(int side = 0; side < 2; side++) {
+
+  theSamples = new Person****[simDetails.size()];
+  for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
+    int numFam = simDetails[ped].numFam;
+    int numGen = simDetails[ped].numGen;
+    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Allocate space and make Person objects for all those we will simulate,
+    // assigning sex if <sexSpecificMaps> is true
+    theSamples[ped] = new Person***[numFam];
     for (int fam = 0; fam < numFam; fam++) {
-      for(int curGen = 1; curGen < numGen; curGen++) {
-	// Determine how many samples we need data for in <curGen>:
-	int numPersons = numSampsToRetain[curGen];
-	if (numPersons == 0) // not saving, but need parent of next generation
-	  numPersons = 1;
-	// additional person that is the other parent of next generation
-	numPersons++;
 
-	generations[side][fam][curGen] = new Person[numPersons];
+      // Always exactly 2 sides (may extend this later)
+      theSamples[ped][fam] = new Person**[2];
+      for(int side = 0; side < 2; side++) {
 
-	if (sexSpecificMaps) {
-	  // the two individuals that reproduce are index 0 (a founder) and 1
-	  // randomly decide which one to make female
-	  int theFemale = coinFlip(randomGen);
-	  generations[side][fam][curGen][theFemale].sex = 1;
-	}
-      }
-    }
-  }
+	theSamples[ped][fam][side] = new Person*[numGen];
 
-  // have exactly 2 founders / 4 founder haplotypes per generation
-  int numFounderHapsPerFam = numGen * 4;
+	for(int curGen = 1; curGen < numGen; curGen++) {
+	  // Determine how many samples we need data for in <curGen>:
+	  int numPersons = numSampsToRetain[curGen];
+	  if (numPersons == 0) // not saving, but need parent of next generation
+	    numPersons = 1;
+	  // additional person that is the other parent of next generation
+	  numPersons++;
 
-  for(int fam = 0; fam < numFam; fam++) { // simulate each family
+	  theSamples[ped][fam][side][curGen] = new Person[numPersons];
 
-    for (int h = 0; h < 2; h++) { // clear out the old haplotypes for <ad,mom
-      dad.haps[h].clear();
-      mom.haps[h].clear();
-    }
-
-    // simulate haplotypes for each chrom:
-    for(auto it = geneticMap.begin(); it != geneticMap.end(); it++) {
-      vector<PhysGeneticPos> *curMap = it->second;
-
-      // Make trivial haplotypes for generation 0 founders:
-      Segment trivialSeg;
-      // no recombinations in founders
-      trivialSeg.endPos = curMap->back().physPos;
-      for(int h = 0; h < 2; h++) {
-	trivialSeg.foundHapNum = fam * numFounderHapsPerFam + h;
-	// makes a copy of <trivialSeg>, can reuse
-	dad.haps[h].emplace_back();
-	dad.haps[h].back().push_back(trivialSeg);
-	trivialSeg.foundHapNum = fam * numFounderHapsPerFam + h + 2;
-	mom.haps[h].emplace_back();
-	mom.haps[h].back().push_back(trivialSeg);
-      }
-
-      // do the simulation for each generation
-      for(int curGen = 1; curGen < numGen; curGen++) {
-
-	// First make trivial haplotypes for the two founders in <curGen>; use
-	// convention that sample 0 is the founder on both sides:
-	if (curGen != numGen -1) { //no need for founders in the last generation
-	  for(int side = 0; side < 2; side++) {
-	    for(int h = 0; h < 2; h++) {
-	      // 4 founder haplotypes per generation
-	      trivialSeg.foundHapNum = fam * numFounderHapsPerFam +
-		curGen * 4 + side * 2 + h;
-	      // the following makes a copy of <trivialSeg>, so we can reuse it
-	      generations[side][fam][curGen][0].haps[h].emplace_back();
-	      generations[side][fam][curGen][0].haps[h].back().push_back(
-		  trivialSeg);
-	    }
+	  if (sexSpecificMaps) {
+	    // the two individuals that reproduce are index 0 (a founder) and 1
+	    // randomly decide which one to make female
+	    int theFemale = coinFlip(randomGen);
+	    theSamples[ped][fam][side][curGen][theFemale].sex = 1;
 	  }
 	}
+      }
+    }
 
-	int numPersons = numSampsToRetain[curGen];
-	if (numPersons == 0)
-	  // not saving any, but need parent of next generation
-	  numPersons = 1;
-	// additional person that is the other parent of next generation
-	numPersons++;
+    ////////////////////////////////////////////////////////////////////////////
+    // Simulate all the families for the current pedigree type
+    for(int fam = 0; fam < numFam; fam++) {
 
-	// Now simulate the non-founders in <curGen>
-	for(int side = 0; side < 2; side++) {
-	  for(int ind = 1; ind < numPersons; ind++) {
-	    if (curGen == 1) {
-	      // no "sides" for creating generation 1; use <dad> and <mom>
-	      generations[side][fam][curGen][ind].haps[0].emplace_back();
-	      generations[side][fam][curGen][ind].haps[1].emplace_back();
-	      generateHaplotype(
-			     generations[side][fam][curGen][ind].haps[0].back(),
-			     dad, curMap);
-	    generateHaplotype(
-			     generations[side][fam][curGen][ind].haps[1].back(),
-			     mom, curMap);
-	    }
-	    else {
-	      if (sexSpecificMaps) {
-		assert(generations[side][fam][curGen-1][0].sex !=
-				      generations[side][fam][curGen-1][1].sex);
+      for (int h = 0; h < 2; h++) { // clear out the old haplotypes for dad,mom
+	dad.haps[h].clear();
+	mom.haps[h].clear();
+      }
+
+      for(int side = 0; side < 2; side++) { // each side of the current family
+
+	for(int curGen = 1; curGen < numGen; curGen++) {
+
+	  // for each chromosome:
+	  for(auto it = geneticMap.begin(); it != geneticMap.end(); it++) {
+	    vector<PhysGeneticPos> *curMap = it->second;
+
+	    Segment trivialSeg;
+	    if (side == 0 && curGen == 1) {
+	      // Make trivial haplotypes for generation 0 founders:
+	      // no recombinations in founders
+	      trivialSeg.endPos = curMap->back().physPos;
+	      for(int h = 0; h < 2; h++) {
+		trivialSeg.foundHapNum = totalFounderHaps++;
+		// makes a copy of <trivialSeg>, can reuse
+		dad.haps[h].emplace_back();
+		dad.haps[h].back().push_back(trivialSeg);
 	      }
-	      for(int parIdx = 0; parIdx < 2; parIdx++) {
-		int hapIdx = parIdx;
-		if (sexSpecificMaps)
-		  hapIdx = generations[side][fam][curGen-1][parIdx].sex;
+	      for(int h = 0; h < 2; h++){
+		trivialSeg.foundHapNum = totalFounderHaps++;
+		mom.haps[h].emplace_back();
+		mom.haps[h].back().push_back(trivialSeg);
+	      }
+	    }
 
-		generations[side][fam][curGen][ind].haps[hapIdx].emplace_back();
+	    // First make trivial haplotypes for the two founders in <curGen>;
+	    // use convention that sample 0 is the founder on each side:
+	    if (curGen != numGen -1) { // no founders in the last generation
+	      for(int h = 0; h < 2; h++) {
+		// 4 founder haplotypes per generation
+		trivialSeg.foundHapNum = totalFounderHaps++;
+		// the following copies <trivialSeg>, so we can reuse it
+		theSamples[ped][fam][side][curGen][0].haps[h].emplace_back();
+		theSamples[ped][fam][side][curGen][0].haps[h].back().push_back(
+								    trivialSeg);
+	      }
+	    }
+
+	    int numPersons = numSampsToRetain[curGen];
+	    if (numPersons == 0)
+	      // not saving any, but need parent of next generation
+	      numPersons = 1;
+	    // additional person that is the other parent of next generation
+	    numPersons++;
+
+	    // Now simulate the non-founders in <curGen>
+	    for(int ind = 1; ind < numPersons; ind++) {
+	      if (curGen == 1) {
+		// no "sides" for creating generation 1; use <dad> and <mom>
+		theSamples[ped][fam][side][curGen][ind].haps[0].emplace_back();
+		theSamples[ped][fam][side][curGen][ind].haps[1].emplace_back();
 		generateHaplotype(
-		    generations[side][fam][curGen][ind].haps[hapIdx].back(),
-		    /*parent=*/ generations[side][fam][curGen-1][parIdx],
-		    curMap);
+			theSamples[ped][fam][side][curGen][ind].haps[0].back(),
+			dad, curMap);
+		generateHaplotype(
+			theSamples[ped][fam][side][curGen][ind].haps[1].back(),
+			mom, curMap);
 	      }
-	    }
-	  }
-	}
+	      else {
+		if (sexSpecificMaps) {
+		  assert(theSamples[ped][fam][side][curGen-1][0].sex !=
+				  theSamples[ped][fam][side][curGen-1][1].sex);
+		}
+		for(int parIdx = 0; parIdx < 2; parIdx++) {
+		  int hapIdx = parIdx;
+		  if (sexSpecificMaps)
+		    hapIdx = theSamples[ped][fam][side][curGen-1][parIdx].sex;
 
-      } // <curGen>
-    } // <geneticMap> (chroms)
-  } // <fam>
+		  theSamples[ped][fam][side][curGen][ind].haps[hapIdx].
+								 emplace_back();
+		  generateHaplotype(
+		    theSamples[ped][fam][side][curGen][ind].haps[hapIdx].back(),
+		    /*parent=*/ theSamples[ped][fam][side][curGen-1][parIdx],
+		    curMap);
+		}
+	      }
+	    } // <ind>
+	  } // <geneticMap> (chroms)
+	} // <curGen>
+
+      } // <side>
+    } // <fam>
+
+  } // <ped>
+
+  return totalFounderHaps;
 }
 
 // Simulate one haplotype <toGenerate> by sampling crossovers and switching
-// between the two haplotypes stored in <parent>.
+// between the two haplotypes stored in <parent>. Uses the genetic map stored
+// in <curMap> which is expected to correspond to the chromosome being
+// simulated and may contain either one sex-averaged map or a male and female
+// map.
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap) {
   // For the two haplotypes in <parent>, which index is the current
@@ -481,11 +564,8 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   }
 }
 
-// Print the break points to <outFile> along with meta data for each haplotype
-// (sample id with generation number, side of the pedigree, and sample number,
-// as well as which haplotype is being printed)
-void printBPs(Person ***generations[2], int *numSampsToRetain, int numGen,
-	      int numFam,
+// Print the break points to <outFile>
+void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *outFile) {
   FILE *out = fopen(outFile, "w");
@@ -494,27 +574,35 @@ void printBPs(Person ***generations[2], int *numSampsToRetain, int numGen,
     exit(1);
   }
 
-  assert(numSampsToRetain[0] == 0);
-  for(int fam = 0; fam < numFam; fam++) {
-    for(int side = 0; side < 2; side++) {
-      for(int gen = 1; gen < numGen; gen++) {
-	if (numSampsToRetain[gen] > 0) {
-	  for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
-	    for(int h = 0; h < 2; h++) {
-	      fprintf(out, "f%d_s%d_g%d_i%d h%d", fam+1, side, gen+1, ind, h);
+  for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+    char pedType = simDetails[ped].type;
+    int numFam = simDetails[ped].numFam;
+    int numGen = simDetails[ped].numGen;
+    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 
-	      for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
-		// print chrom name and starting position
-		fprintf(out, " %s|%d", geneticMap[chr].first,
-			geneticMap[chr].second->front().physPos);
-		Haplotype &curHap = generations[side][fam][gen][ind].
+    assert(numSampsToRetain[0] == 0);
+    for(int fam = 0; fam < numFam; fam++) {
+      for(int side = 0; side < 2; side++) {
+	for(int gen = 1; gen < numGen; gen++) {
+	  if (numSampsToRetain[gen] > 0) {
+	    for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
+	      for(int h = 0; h < 2; h++) {
+		fprintf(out, "%c%d_f%d_s%d_g%d_i%d h%d", pedType, ped+1, fam+1,
+			side, gen+1, ind, h);
+
+		for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
+		  // print chrom name and starting position
+		  fprintf(out, " %s|%d", geneticMap[chr].first,
+			  geneticMap[chr].second->front().physPos);
+		  Haplotype &curHap = theSamples[ped][fam][side][gen][ind].
 								   haps[h][chr];
-		for(unsigned int s = 0; s < curHap.size(); s++) {
-		  Segment &seg = curHap[s];
-		  fprintf(out, " %d:%d", seg.foundHapNum, seg.endPos);
+		  for(unsigned int s = 0; s < curHap.size(); s++) {
+		    Segment &seg = curHap[s];
+		    fprintf(out, " %d:%d", seg.foundHapNum, seg.endPos);
+		  }
 		}
+		fprintf(out, "\n");
 	      }
-	      fprintf(out, "\n");
 	    }
 	  }
 	}
@@ -525,12 +613,12 @@ void printBPs(Person ***generations[2], int *numSampsToRetain, int numGen,
   fclose(out);
 }
 
-// Given the simulated break points for individuals in each generation stored in
-// <generations> and other necessary information, reads input VCF format data
-// from the file named <inVCFfile> and prints the simulated haplotypes for each
-// sample to <outVCFfile> in VCF format.
-void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
-	     int numFam, char *inVCFfile, char *outVCFfile,
+// Given the simulated break points for individuals in each pedigree/family
+// stored in <theSamples> and other necessary information, reads input VCF
+// format data from the file named <inVCFfile> and prints the simulated
+// haplotypes for each sample to <outVCFfile> in VCF format.
+void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap) {
   // open input VCF file:
   FILE *in = fopen(inVCFfile, "r");
@@ -554,9 +642,7 @@ void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
   // and | between successive alleles. Make this simpler with:
   const char *betweenAlleles[2] = { tab, bar };
 
-  // have exactly 2 founders / 4 founder haplotypes per generation
-  int numFounderHaps = numGen * 4 * numFam;
-  int *founderHaps = new int[numFounderHaps];
+  int *founderHaps = new int[totalFounderHaps];
 
   // iterate over chromosomes in the genetic map
   unsigned int chrIdx = 0; // index of current chromosome number;
@@ -579,12 +665,19 @@ void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
       fprintf(out, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
 
       // sample ids:
-      for(int fam = 0; fam < numFam; fam++)
-	for(int side = 0; side < 2; side++)
-	  for(int gen = 1; gen < numGen; gen++)
-	    if (numSampsToRetain[gen] > 0)
-	      for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++)
-		fprintf(out, "\tf%d_s%d_g%d_i%d", fam+1, side, gen+1, ind);
+      for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+	int numFam = simDetails[ped].numFam;
+	int numGen = simDetails[ped].numGen;
+	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+
+	for(int fam = 0; fam < numFam; fam++)
+	  for(int side = 0; side < 2; side++)
+	    for(int gen = 1; gen < numGen; gen++)
+	      if (numSampsToRetain[gen] > 0)
+		for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++)
+		  fprintf(out, "\tp%d_f%d_s%d_g%d_i%d", ped+1, fam+1, side,
+			  gen+1, ind);
+      }
       fprintf(out, "\n");
       continue;
     }
@@ -627,7 +720,9 @@ void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
     // read in/store the haplotypes
     int numRead = 0;
     char *token;
-    while(numRead < numFounderHaps && (token = strtok_r(NULL, tab, &saveptr))) {
+    // TODO! want to randomize
+    while(numRead < totalFounderHaps &&
+				      (token = strtok_r(NULL, tab, &saveptr))) {
       char *alleles[2];
       char *saveptr2;
       alleles[0] = strtok_r(token, bar, &saveptr2);
@@ -648,9 +743,9 @@ void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
       numRead += 2;
     }
 
-    if (numRead < numFounderHaps) {
+    if (numRead < totalFounderHaps) {
       printf("ERROR: fewer than the needed %d haplotypes found in VCF\n",
-	      numFounderHaps);
+	      totalFounderHaps);
       exit(6);
     }
 
@@ -659,23 +754,29 @@ void makeVCF(Person ***generations[2], int *numSampsToRetain, int numGen,
     for(int i = 0; i < 7; i++)
       fprintf(out, "\t%s", otherFields[i]);
 
-    for(int fam = 0; fam < numFam; fam++)
-      for(int side = 0; side < 2; side++)
-	for(int gen = 1; gen < numGen; gen++)
-	  if (numSampsToRetain[gen] > 0)
-	    for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
-	      for(int h = 0; h < 2; h++) {
-		Haplotype &curHap = generations[side][fam][gen][ind].
+    for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+      int numFam = simDetails[ped].numFam;
+      int numGen = simDetails[ped].numGen;
+      int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+
+      for(int fam = 0; fam < numFam; fam++)
+	for(int side = 0; side < 2; side++)
+	  for(int gen = 1; gen < numGen; gen++)
+	    if (numSampsToRetain[gen] > 0)
+	      for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
+		for(int h = 0; h < 2; h++) {
+		  Haplotype &curHap = theSamples[ped][fam][side][gen][ind].
 								haps[h][chrIdx];
-		while (curHap.front().endPos < pos) {
-		  pop_front(curHap);
+		  while (curHap.front().endPos < pos) {
+		    pop_front(curHap);
+		  }
+		  assert(curHap.front().endPos >= pos);
+		  int foundHapNum = curHap.front().foundHapNum;
+		  fprintf(out, "%s%d", betweenAlleles[h],
+			  founderHaps[foundHapNum]);
 		}
-		assert(curHap.front().endPos >= pos);
-		int foundHapNum = curHap.front().foundHapNum;
-		fprintf(out, "%s%d", betweenAlleles[h],
-			founderHaps[foundHapNum]);
 	      }
-	    }
+    }
     fprintf(out, "\n");
   }
 
@@ -695,10 +796,10 @@ void pop_front(vector<T> &vec) {
 
 void printUsage(char **argv) {
   printf("Usage:\n");
-  printf("  %s [numFam] [numGen] [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]\n\n", argv[0]);
+  printf("  %s [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]\n\n", argv[0]);
   printf("Where:\n");
-  printf("  [numFam] is an integer indicating the number of families to simulate\n");
-  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
+//  printf("  [numFam] is an integer indicating the number of families to simulate\n");
+//  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
   printf("  [map file] contains either a sex averaged genetic map or both male and\n");
   printf("             female maps\n\n");
   printf("  The genetic map file should be formatted with three or four columns:\n\n");
