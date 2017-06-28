@@ -8,7 +8,6 @@
 #include <chrono>
 #include <assert.h>
 
-// TODO! implement half-sibs
 // TODO! randomly sampling founders
 
 using namespace std;
@@ -199,7 +198,6 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     int generation = atoi(genNumStr);
     int numSamps = atoi(numSampsStr);
 
-    // TODO: want to require that when generation == 1 the num retained == 1
     if (generation < 1 || generation > curNumGen) { // TODO: document
       fprintf(stderr, "ERROR: line %d in dat: generation %d below 1 or above %d (max number\n",
 	      line, generation, curNumGen);
@@ -210,6 +208,12 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       fprintf(stderr, "ERROR: line %d in dat: in generation %d, number of samples to simulate\n",
 	      line, generation);
       fprintf(stderr, "       below 0\n");
+      exit(2);
+    }
+    if (generation == 1 && numSamps != 1) {
+      fprintf(stderr, "ERROR: line %d in dat: in generation 1, if founders are to be printed must\n",
+	      line);
+      fprintf(stderr, "       list 1 as the nubmer to be printed (others invalid)\n");
       exit(2);
     }
 
@@ -327,6 +331,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
   theSamples = new Person****[simDetails.size()];
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
+    char pedType = simDetails[ped].type;
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
@@ -337,10 +342,30 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     theSamples[ped] = new Person***[numFam];
     for (int fam = 0; fam < numFam; fam++) {
 
-      // Make Person objects for the top-most generation -- shared by both sides
-      Person *parents = new Person[2];
-      if (sexSpecificMaps)
-	parents[1].sex = 1;
+      // Make Person objects for the top-most generation
+      // array of size 2 for the parents used on each side
+      Person *parents[2];
+      if (pedType == 'f') {
+	// full siblings in second generation: same parents for both sides:
+	parents[0] = parents[1] = new Person[2];
+	if (sexSpecificMaps)
+	  parents[0][1].sex = 1;
+      }
+      else if (pedType == 'h') {
+	parents[0] = new Person[2];
+	parents[1] = new Person[2];
+
+	// decide whether the shared parent -- index 0 in each parents array --
+	// is male or female
+	int sharedParSex = coinFlip(randomGen);
+	parents[0][0].sex = parents[1][0].sex = sharedParSex;
+	// opposite for other parent:
+	parents[0][1].sex = parents[1][1].sex = 1 ^ sharedParSex;
+      }
+      else {
+	fprintf(stderr, "ERROR: unsupported pedigree type %c\n", pedType);
+	exit(5);
+      }
 
       // Always exactly 2 sides (may extend this later)
       theSamples[ped][fam] = new Person**[2];
@@ -348,7 +373,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	theSamples[ped][fam][side] = new Person*[numGen];
 
-	theSamples[ped][fam][side][0] = parents; // store parents
+	theSamples[ped][fam][side][0] = parents[side]; // store parents
 
 	for(int curGen = 1; curGen < numGen; curGen++) {
 	  // Determine how many samples we need data for in <curGen>:
@@ -380,10 +405,21 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    // no recombinations in founders
 	    Segment trivialSeg;
 	    trivialSeg.endPos = curMap->back().physPos;
-	    if (side == 0 && curGen == 1) {
+	    if (curGen == 1) {
 	      for(int par = 0; par < 2; par++) {
+		if (pedType == 'f' && side > 0)
+		  // already initialized parents on side == 0, for
+		  // pedType == 'f' they're the same objects so no need to
+		  // change anything
+		  break;
 		for(int h = 0; h < 2; h++) {
-		  trivialSeg.foundHapNum = totalFounderHaps++;
+		  if (pedType == 'h' && side == 1 && par == 0)
+		    // shared parent -- make identical to side 0 below
+		    trivialSeg.foundHapNum =
+		      theSamples[ped][fam][0][0][0].haps[h].back().back().
+								    foundHapNum;
+		  else
+		    trivialSeg.foundHapNum = totalFounderHaps++;
 		  // makes a copy of <trivialSeg>, can reuse
 		  theSamples[ped][fam][side][0][par].haps[h].emplace_back();
 		  theSamples[ped][fam][side][0][par].haps[h].back().push_back(
@@ -559,11 +595,19 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     for(int fam = 0; fam < numFam; fam++) {
       for(int side = 0; side < 2; side++) {
 	for(int gen = 0; gen < numGen; gen++) {
-	  if (gen == 0 && side > 0)
-	    // Same top-most generation founders on both sides; print once
-	    continue;
 	  if (numSampsToRetain[gen] > 0) {
 	    for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+	      if (gen == 0) {
+		if (pedType == 'f' && side > 0)
+		  // for pedtype == 'f', same top-most generation founders
+		  // on both sides; need only print once, so bug out of
+		  // this loop
+		  break;
+		if (pedType == 'h' && side > 0 && ind == 0)
+		  // for pedType == 'h', ind 0 in the top-most generation is
+		  // the same person; need only print once, so skip
+		  continue;
+	      }
 	      if (ind == 0 && gen == numGen-1)
 		// no founders (by convention stored as ind == 0) in the
 		// last generation
@@ -656,12 +700,20 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int side = 0; side < 2; side++)
-	    for(int gen = 0; gen < numGen; gen++) {
-	      if (gen == 0 && side > 0)
-		// Same top-most generation founders on both sides; print once
-		continue;
+	    for(int gen = 0; gen < numGen; gen++)
 	      if (numSampsToRetain[gen] > 0)
 		for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+		  if (gen == 0) {
+		    if (pedType == 'f' && side > 0)
+		      // for pedtype == 'f', same top-most generation founders
+		      // on both sides; need only print once, so bug out of
+		      // this loop
+		      break;
+		    if (pedType == 'h' && side > 0 && ind == 0)
+		      // for pedType == 'h', ind 0 in the top-most generation is
+		      // the same person; need only print once, so skip
+		      continue;
+		  }
 		  if (ind == 0 && gen == numGen-1)
 		    // no founders (by convention stored as ind == 0) in the
 		    // last generation
@@ -669,7 +721,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  fprintf(out, "\t%c%d_f%d_s%d_g%d_i%d", pedType, ped+1, fam+1,
 			  side, gen+1, ind);
 		}
-	    }
       }
       fprintf(out, "\n");
       continue;
@@ -748,18 +799,27 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       fprintf(out, "\t%s", otherFields[i]);
 
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+      char pedType = simDetails[ped].type;
       int numFam = simDetails[ped].numFam;
       int numGen = simDetails[ped].numGen;
       int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 
       for(int fam = 0; fam < numFam; fam++)
 	for(int side = 0; side < 2; side++)
-	  for(int gen = 0; gen < numGen; gen++) {
-	    if (gen == 0 && side > 0)
-	      // Same top-most generation founders on both sides; print once
-	      continue;
+	  for(int gen = 0; gen < numGen; gen++)
 	    if (numSampsToRetain[gen] > 0)
 	      for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+		if (gen == 0) {
+		  if (pedType == 'f' && side > 0)
+		    // for pedtype == 'f', same top-most generation founders
+		    // on both sides; need only print once, so bug out of
+		    // this loop
+		    break;
+		  if (pedType == 'h' && side > 0 && ind == 0)
+		    // for pedType == 'h', ind 0 in the top-most generation is
+		    // the same person; need only print once, so skip
+		    continue;
+		}
 		if (ind == 0 && gen == numGen-1)
 		  // no founders (by convention stored as ind == 0) in the
 		  // last generation
@@ -776,7 +836,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 			  founderHaps[foundHapNum]);
 		}
 	      }
-	  }
     }
     fprintf(out, "\n");
   }
