@@ -10,7 +10,6 @@
 
 // TODO! implement half-sibs
 // TODO! randomly sampling founders
-// TODO! update all comments before functions
 
 using namespace std;
 
@@ -200,8 +199,9 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     int generation = atoi(genNumStr);
     int numSamps = atoi(numSampsStr);
 
-    if (generation < 2 || generation > curNumGen) { // TODO: document
-      fprintf(stderr, "ERROR: line %d in dat: generation %d below 2 or above %d (max number\n",
+    // TODO: want to require that when generation == 1 the num retained == 1
+    if (generation < 1 || generation > curNumGen) { // TODO: document
+      fprintf(stderr, "ERROR: line %d in dat: generation %d below 1 or above %d (max number\n",
 	      line, generation, curNumGen);
       fprintf(stderr, "       of generations)\n");
       exit(1);
@@ -325,11 +325,6 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
   int totalFounderHaps = 0;
 
-  // Make Person objects for the top-most generation:
-  Person dad, mom;
-  if (sexSpecificMaps)
-    mom.sex = 1;
-
   theSamples = new Person****[simDetails.size()];
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
     int numFam = simDetails[ped].numFam;
@@ -342,11 +337,18 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     theSamples[ped] = new Person***[numFam];
     for (int fam = 0; fam < numFam; fam++) {
 
+      // Make Person objects for the top-most generation -- shared by both sides
+      Person *parents = new Person[2];
+      if (sexSpecificMaps)
+	parents[1].sex = 1;
+
       // Always exactly 2 sides (may extend this later)
       theSamples[ped][fam] = new Person**[2];
-      for(int side = 0; side < 2; side++) {
+      for(int side = 0; side < 2; side++) { // each side of current family
 
 	theSamples[ped][fam][side] = new Person*[numGen];
+
+	theSamples[ped][fam][side][0] = parents; // store parents
 
 	for(int curGen = 1; curGen < numGen; curGen++) {
 	  // Determine how many samples we need data for in <curGen>:
@@ -365,41 +367,28 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    theSamples[ped][fam][side][curGen][theFemale].sex = 1;
 	  }
 	}
-      }
-    }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Simulate all the families for the current pedigree type
-    for(int fam = 0; fam < numFam; fam++) {
-
-      for (int h = 0; h < 2; h++) { // clear out the old haplotypes for dad,mom
-	dad.haps[h].clear();
-	mom.haps[h].clear();
-      }
-
-      for(int side = 0; side < 2; side++) { // each side of the current family
-
+	////////////////////////////////////////////////////////////////////////
+	// Simulate all the generations for the current pedigree/family/side
 	for(int curGen = 1; curGen < numGen; curGen++) {
 
 	  // for each chromosome:
 	  for(auto it = geneticMap.begin(); it != geneticMap.end(); it++) {
 	    vector<PhysGeneticPos> *curMap = it->second;
 
+	    // Make trivial haplotypes for generation 0 founders:
+	    // no recombinations in founders
 	    Segment trivialSeg;
+	    trivialSeg.endPos = curMap->back().physPos;
 	    if (side == 0 && curGen == 1) {
-	      // Make trivial haplotypes for generation 0 founders:
-	      // no recombinations in founders
-	      trivialSeg.endPos = curMap->back().physPos;
-	      for(int h = 0; h < 2; h++) {
-		trivialSeg.foundHapNum = totalFounderHaps++;
-		// makes a copy of <trivialSeg>, can reuse
-		dad.haps[h].emplace_back();
-		dad.haps[h].back().push_back(trivialSeg);
-	      }
-	      for(int h = 0; h < 2; h++){
-		trivialSeg.foundHapNum = totalFounderHaps++;
-		mom.haps[h].emplace_back();
-		mom.haps[h].back().push_back(trivialSeg);
+	      for(int par = 0; par < 2; par++) {
+		for(int h = 0; h < 2; h++) {
+		  trivialSeg.foundHapNum = totalFounderHaps++;
+		  // makes a copy of <trivialSeg>, can reuse
+		  theSamples[ped][fam][side][0][par].haps[h].emplace_back();
+		  theSamples[ped][fam][side][0][par].haps[h].back().push_back(
+								    trivialSeg);
+		}
 	      }
 	    }
 
@@ -425,34 +414,21 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	    // Now simulate the non-founders in <curGen>
 	    for(int ind = 1; ind < numPersons; ind++) {
-	      if (curGen == 1) {
-		// no "sides" for creating generation 1; use <dad> and <mom>
-		theSamples[ped][fam][side][curGen][ind].haps[0].emplace_back();
-		theSamples[ped][fam][side][curGen][ind].haps[1].emplace_back();
-		generateHaplotype(
-			theSamples[ped][fam][side][curGen][ind].haps[0].back(),
-			dad, curMap);
-		generateHaplotype(
-			theSamples[ped][fam][side][curGen][ind].haps[1].back(),
-			mom, curMap);
-	      }
-	      else {
-		if (sexSpecificMaps) {
-		  assert(theSamples[ped][fam][side][curGen-1][0].sex !=
+	      if (sexSpecificMaps) {
+		assert(theSamples[ped][fam][side][curGen-1][0].sex !=
 				  theSamples[ped][fam][side][curGen-1][1].sex);
-		}
-		for(int parIdx = 0; parIdx < 2; parIdx++) {
-		  int hapIdx = parIdx;
-		  if (sexSpecificMaps)
-		    hapIdx = theSamples[ped][fam][side][curGen-1][parIdx].sex;
+	      }
+	      for(int parIdx = 0; parIdx < 2; parIdx++) {
+		int hapIdx = parIdx;
+		if (sexSpecificMaps)
+		  hapIdx = theSamples[ped][fam][side][curGen-1][parIdx].sex;
 
-		  theSamples[ped][fam][side][curGen][ind].haps[hapIdx].
+		theSamples[ped][fam][side][curGen][ind].haps[hapIdx].
 								 emplace_back();
-		  generateHaplotype(
+		generateHaplotype(
 		    theSamples[ped][fam][side][curGen][ind].haps[hapIdx].back(),
 		    /*parent=*/ theSamples[ped][fam][side][curGen-1][parIdx],
 		    curMap);
-		}
 	      }
 	    } // <ind>
 	  } // <geneticMap> (chroms)
@@ -580,12 +556,19 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 
-    assert(numSampsToRetain[0] == 0);
     for(int fam = 0; fam < numFam; fam++) {
       for(int side = 0; side < 2; side++) {
-	for(int gen = 1; gen < numGen; gen++) {
+	for(int gen = 0; gen < numGen; gen++) {
+	  if (gen == 0 && side > 0)
+	    // Same top-most generation founders on both sides; print once
+	    continue;
 	  if (numSampsToRetain[gen] > 0) {
-	    for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
+	    for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+	      if (ind == 0 && gen == numGen-1)
+		// no founders (by convention stored as ind == 0) in the
+		// last generation
+		continue;
+
 	      for(int h = 0; h < 2; h++) {
 		fprintf(out, "%c%d_f%d_s%d_g%d_i%d h%d", pedType, ped+1, fam+1,
 			side, gen+1, ind, h);
@@ -640,7 +623,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   const char *bar = "|";
   // Below when we print the VCF output, we alternate printing tab
   // and | between successive alleles. Make this simpler with:
-  const char *betweenAlleles[2] = { tab, bar };
+  const char betweenAlleles[2] = { '\t', '|' };
 
   int *founderHaps = new int[totalFounderHaps];
 
@@ -666,17 +649,27 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       // sample ids:
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+	char pedType = simDetails[ped].type;
 	int numFam = simDetails[ped].numFam;
 	int numGen = simDetails[ped].numGen;
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int side = 0; side < 2; side++)
-	    for(int gen = 1; gen < numGen; gen++)
+	    for(int gen = 0; gen < numGen; gen++) {
+	      if (gen == 0 && side > 0)
+		// Same top-most generation founders on both sides; print once
+		continue;
 	      if (numSampsToRetain[gen] > 0)
-		for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++)
-		  fprintf(out, "\tp%d_f%d_s%d_g%d_i%d", ped+1, fam+1, side,
-			  gen+1, ind);
+		for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+		  if (ind == 0 && gen == numGen-1)
+		    // no founders (by convention stored as ind == 0) in the
+		    // last generation
+		    continue;
+		  fprintf(out, "\t%c%d_f%d_s%d_g%d_i%d", pedType, ped+1, fam+1,
+			  side, gen+1, ind);
+		}
+	    }
       }
       fprintf(out, "\n");
       continue;
@@ -761,9 +754,16 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       for(int fam = 0; fam < numFam; fam++)
 	for(int side = 0; side < 2; side++)
-	  for(int gen = 1; gen < numGen; gen++)
+	  for(int gen = 0; gen < numGen; gen++) {
+	    if (gen == 0 && side > 0)
+	      // Same top-most generation founders on both sides; print once
+	      continue;
 	    if (numSampsToRetain[gen] > 0)
-	      for(int ind = 1; ind < numSampsToRetain[gen] + 1; ind++) {
+	      for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
+		if (ind == 0 && gen == numGen-1)
+		  // no founders (by convention stored as ind == 0) in the
+		  // last generation
+		  continue;
 		for(int h = 0; h < 2; h++) {
 		  Haplotype &curHap = theSamples[ped][fam][side][gen][ind].
 								haps[h][chrIdx];
@@ -772,10 +772,11 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  }
 		  assert(curHap.front().endPos >= pos);
 		  int foundHapNum = curHap.front().foundHapNum;
-		  fprintf(out, "%s%d", betweenAlleles[h],
+		  fprintf(out, "%c%d", betweenAlleles[h],
 			  founderHaps[foundHapNum]);
 		}
 	      }
+	  }
     }
     fprintf(out, "\n");
   }
