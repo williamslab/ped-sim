@@ -6,9 +6,10 @@
 #include <vector>
 #include <random>
 #include <chrono>
+#include <algorithm>
 #include <assert.h>
 
-// TODO! randomly sampling founders
+// TODO: ability to specify multiply factor in each generation
 
 using namespace std;
 
@@ -679,6 +680,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   bool gotSomeData = false;
 
+  int numInputSamples = 0;
+  vector<int> shuffSamples; // For randomizing the assigned haplotypes
+
   while (getline(&buffer, &bytesRead, in) >= 0) { // read each line of input VCF
     if (buffer[0] == '#' && buffer[1] == '#') {
       // header line: print to output
@@ -686,12 +690,33 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       continue;
     }
 
-    if (buffer[0] == '#') {
-      // header line indicating fields and sample ids -- print version for the
-      // simulated individuals
+    if (buffer[0] == '#') { // header line with sample ids
+      // First determine number of input samples by counting the number of tabs
+      int numFields = 0;
+      for(unsigned int i = 0; buffer[i] != '\0' && i < bytesRead; i++) {
+	if (buffer[i] == '\t')
+	  numFields++;
+      }
+      // 8 tabs before the first sample
+      numInputSamples = numFields - 8;
+
+      // Next randomly shuffle the samples indexes for founder haplotype
+      // assignment
+      for(int i = 0; i < numInputSamples; i++)
+	shuffSamples.push_back(i);
+      shuffle(shuffSamples.begin(), shuffSamples.end(), randomGen);
+
+      if (2 * numInputSamples < totalFounderHaps) {
+	fprintf(stderr, "ERROR: need %d founder haplotypes, but input only contains %d\n",
+		totalFounderHaps, 2 * numInputSamples);
+	exit(5);
+      }
+
+      // Now print the header line indicating fields and sample ids for the
+      // output VCF
       fprintf(out, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
 
-      // sample ids:
+      // print sample ids:
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
 	char pedType = simDetails[ped].type;
 	int numFam = simDetails[ped].numFam;
@@ -762,11 +787,19 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       otherFields[i] = strtok_r(NULL, tab, &saveptr);
 
     // read in/store the haplotypes
-    int numRead = 0;
+    int inputIndex = 0;
+    int numStored = 0;
     char *token;
-    // TODO! want to randomize
-    while(numRead < totalFounderHaps &&
-				      (token = strtok_r(NULL, tab, &saveptr))) {
+    while((token = strtok_r(NULL, tab, &saveptr))) {
+      // For randomizing founder haplotypes, map the sample index in the input
+      // VCF to a shuffled value
+      int founderIndex = shuffSamples[inputIndex] * 2;
+      inputIndex++;
+
+      if (founderIndex >= totalFounderHaps)
+	// only need up to <totalFounderHaps> haplotypes: skip this
+	continue;
+
       char *alleles[2];
       char *saveptr2;
       alleles[0] = strtok_r(token, bar, &saveptr2);
@@ -782,14 +815,19 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       }
 
       for(int h = 0; h < 2; h++) {
-	founderHaps[ numRead + h ] = atoi( alleles[h] );
+	founderHaps[ founderIndex + h ] = atoi( alleles[h] );
       }
-      numRead += 2;
+
+      numStored += 2;
     }
 
-    if (numRead < totalFounderHaps) {
-      printf("ERROR: fewer than the needed %d haplotypes found in VCF\n",
-	      totalFounderHaps);
+    assert(numStored == totalFounderHaps);
+
+    int numRead = inputIndex;
+    if (numRead != numInputSamples) {
+      printf("ERROR: line in VCF file has data for %d samples vs. %d indicated\n",
+	     numRead, numInputSamples);
+      printf("       in header\n");
       exit(6);
     }
 
