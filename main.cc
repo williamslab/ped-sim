@@ -75,15 +75,15 @@ int main(int argc, char **argv) {
   printf("Using random seed: %u\n\n", seed);
   randomGen.seed(seed);
 
-  int numGen = atoi(argv[1]);
+  int numFam = atoi(argv[1]);
+
+  int numGen = atoi(argv[2]);
   // We'll save generated haplotypes for the indicated number of samples in the
   // indicated generations. This information is indicated in the dat file read
   // below. But we initially assume that we'll save 0
   int *numSampsToRetain = new int[numGen];
   for(int i = 0; i < numGen; i++)
     numSampsToRetain[i] = 0;
-
-  int numFam = atoi(argv[2]);
 
   readDat(numSampsToRetain, numGen, /*datFile=*/ argv[3]);
 
@@ -695,10 +695,10 @@ void pop_front(vector<T> &vec) {
 
 void printUsage(char **argv) {
   printf("Usage:\n");
-  printf("  %s [numGen] [numFam] [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]\n\n", argv[0]);
+  printf("  %s [numFam] [numGen] [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]\n\n", argv[0]);
   printf("Where:\n");
-  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
   printf("  [numFam] is an integer indicating the number of families to simulate\n");
+  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
   printf("  [map file] contains either a sex averaged genetic map or both male and\n");
   printf("             female maps\n\n");
   printf("  The genetic map file should be formatted with three or four columns:\n\n");
