@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <assert.h>
 
+// TODO: command line options for printing phased VCF and for retaining a
+//       specified number of unused samples
 // TODO: ability to specify multiply factor in each generation
 
 using namespace std;
@@ -738,13 +740,16 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
-  const char *tab = "\t";
+  // technically tab and newline; we want the latter so that the last sample id
+  // on the header line doesn't include the newline character in it
+  const char *tab = "\t\n";
   const char *bar = "|";
   // Below when we print the VCF output, we alternate printing tab
-  // and | between successive alleles. Make this simpler with:
-  const char betweenAlleles[2] = { '\t', '|' };
+  // and / between successive alleles. Make this simpler with:
+  const char betweenAlleles[2] = { '\t', '/' };
 
-  int *founderHaps = new int[totalFounderHaps];
+  char **hapAlleles = NULL; // stores all alleles from input sample
+  char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
 
   // iterate over chromosomes in the genetic map
   unsigned int chrIdx = 0; // index of current chromosome number;
@@ -755,7 +760,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bool gotSomeData = false;
 
   int numInputSamples = 0;
-  vector<int> shuffSamples; // For randomizing the assigned haplotypes
+  vector<int> shuffHaps; // For randomizing the assigned haplotypes
 
   while (getline(&buffer, &bytesRead, in) >= 0) { // read each line of input VCF
     if (buffer[0] == '#' && buffer[1] == '#') {
@@ -764,21 +769,33 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       continue;
     }
 
-    if (buffer[0] == '#') { // header line with sample ids
-      // First determine number of input samples by counting the number of tabs
-      int numFields = 0;
-      for(unsigned int i = 0; buffer[i] != '\0' && i < bytesRead; i++) {
-	if (buffer[i] == '\t')
-	  numFields++;
-      }
-      // 8 tabs before the first sample
-      numInputSamples = numFields - 8;
+    if (buffer[0] == '#') {
+      // header line with sample ids
 
-      // Next randomly shuffle the samples indexes for founder haplotype
-      // assignment
+      // skip all the header fields relating to meta-data:
+      char *saveptr;
+      char *token = strtok_r(buffer, tab, &saveptr);
+      for(int i = 1; i < 9; i++)
+	token = strtok_r(NULL, tab, &saveptr);
+
+      // now parse / store the sample ids:
+      vector<char*> sampleIds;
+      while ((token = strtok_r(NULL, tab, &saveptr))) {
+	sampleIds.push_back(token);
+      }
+      numInputSamples = sampleIds.size();
+      hapAlleles = new char*[numInputSamples * 2]; // 2 for diploid samples
+
+      // Next generate an ordered list of haplotype indexes (2 * sample_index)
+      // and randomly shuffle it. The index of shuffHaps is the sample index
+      // and the value stored at the index is the (randomly assigned) haplotype
+      // index for its first allele. Ultimately we only care about the haplotype
+      // indexes that are < totalFounderHaps; those >= totalFounderHaps will
+      // not be used for the simulated samples and we will print their data
+      // (see below)
       for(int i = 0; i < numInputSamples; i++)
-	shuffSamples.push_back(i);
-      shuffle(shuffSamples.begin(), shuffSamples.end(), randomGen);
+	shuffHaps.push_back(2 * i);
+      shuffle(shuffHaps.begin(), shuffHaps.end(), randomGen);
 
       if (2 * numInputSamples < totalFounderHaps) {
 	fprintf(stderr, "ERROR: need %d founder haplotypes, but input only contains %d\n",
@@ -821,6 +838,14 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 			  side, gen+1, ind);
 		}
       }
+
+      // print ids for the samples that will not be used in generating the
+      // simulated data
+      for(int i = 0; i < numInputSamples; i++) {
+	if (shuffHaps[i] >= totalFounderHaps)
+	  fprintf(out, "\t%s", sampleIds[i]);
+      }
+
       fprintf(out, "\n");
       continue;
     }
@@ -864,20 +889,24 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     int inputIndex = 0;
     int numStored = 0;
     char *token;
-    while((token = strtok_r(NULL, tab, &saveptr))) {
-      // For randomizing founder haplotypes, map the sample index in the input
-      // VCF to a shuffled value
-      int founderIndex = shuffSamples[inputIndex] * 2;
-      inputIndex++;
-
-      if (founderIndex >= totalFounderHaps)
-	// only need up to <totalFounderHaps> haplotypes: skip this
-	continue;
-
+    while((token = strtok_r(NULL, tab, &saveptr)) &&
+					      numStored < numInputSamples * 2) {
       char *alleles[2];
       char *saveptr2;
       alleles[0] = strtok_r(token, bar, &saveptr2);
       alleles[1] = strtok_r(NULL, bar, &saveptr2);
+
+      for(int h = 0; h < 2; h++)
+	hapAlleles[numStored++] = alleles[h];
+
+      int founderIndex = shuffHaps[ inputIndex ];
+      inputIndex++;
+      if (founderIndex < totalFounderHaps) {
+	for(int h = 0; h < 2; h++)
+	  founderHaps[founderIndex + h] = alleles[h];
+      }
+
+      // error check:
       if (alleles[1] == NULL) {
 	printf("ERROR: VCF contains data field %s, which is not phased\n",
 		token);
@@ -887,21 +916,13 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	printf("ERROR: multiple '|' chacters in data field\n");
 	exit(5);
       }
-
-      for(int h = 0; h < 2; h++) {
-	founderHaps[ founderIndex + h ] = atoi( alleles[h] );
-      }
-
-      numStored += 2;
     }
 
-    assert(numStored == totalFounderHaps);
-
-    int numRead = inputIndex;
-    if (numRead != numInputSamples) {
-      printf("ERROR: line in VCF file has data for %d samples vs. %d indicated\n",
-	     numRead, numInputSamples);
-      printf("       in header\n");
+    bool fewer = numStored < numInputSamples * 2;
+    bool more = token != NULL;
+    if (fewer || more) {
+      printf("ERROR: line in VCF file has data for %s than the indicated %d samples\n",
+	     (more) ? "more" : "fewer", numInputSamples);
       exit(6);
     }
 
@@ -944,11 +965,19 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  }
 		  assert(curHap.front().endPos >= pos);
 		  int foundHapNum = curHap.front().foundHapNum;
-		  fprintf(out, "%c%d", betweenAlleles[h],
+		  fprintf(out, "%c%s", betweenAlleles[h],
 			  founderHaps[foundHapNum]);
 		}
 	      }
     }
+    // print data for samples not used in generating the simulated data
+    for(int i = 0; i < numInputSamples; i++) {
+      if (shuffHaps[i] >= totalFounderHaps)
+	for(int h = 0; h < 2; h++)
+	  fprintf(out, "%c%s", betweenAlleles[h],
+		  hapAlleles[ shuffHaps[i] + h ]);
+    }
+
     fprintf(out, "\n");
   }
 
