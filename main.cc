@@ -316,8 +316,8 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     if (sexSpecificMaps) {
       mapPos2 = atof(mapPos2Str);
     }
-    else {
-      assert(mapPos2Str == NULL); // TODO: do something smarter here
+    else if (mapPos2Str != NULL) {
+      fprintf(stderr, "ERROR: expected three columns on all lines in map file but more seen\n");
     }
 
     curMap->emplace_back(physPos, mapPos1, mapPos2);
