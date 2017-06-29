@@ -179,6 +179,14 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       }
       int curNumFam = atoi(numFamStr);
       curNumGen = atoi(numGenStr);
+
+      if (type[0] == 'd' && curNumGen < 3) {
+	fprintf(stderr, "ERROR: line %d in dat: request to simulate double cousins with fewer\n",
+		line);
+	fprintf(stderr, "       than 3 generations\n");
+	exit(5);
+      }
+
       curNumSampsToRetain = new int[curNumGen];
       for(int i = 0; i < curNumGen; i++)
 	curNumSampsToRetain[i] = 0;
@@ -353,6 +361,9 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  parents[0][1].sex = 1;
       }
       else if (pedType == 'h') {
+	// half-siblings in second generation: one shared parent
+	// because we're not using pointers here but actual Person objects,
+	// we'll make two copies of the same founder; see below
 	parents[0] = new Person[2];
 	parents[1] = new Person[2];
 
@@ -362,6 +373,15 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	parents[0][0].sex = parents[1][0].sex = sharedParSex;
 	// opposite for other parent:
 	parents[0][1].sex = parents[1][1].sex = 1 ^ sharedParSex;
+      }
+      else if (pedType == 'd') {
+	// double cousins: two completely separate sets of parents for the
+	// two sides, and two full siblings on each side reproduce to create
+	// the double cousins in the third generation
+	parents[0] = new Person[2];
+	parents[1] = new Person[2];
+	if (sexSpecificMaps)
+	  parents[0][1].sex = parents[1][1].sex = 1;
       }
       else {
 	fprintf(stderr, "ERROR: unsupported pedigree type %c\n", pedType);
@@ -387,20 +407,39 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  theSamples[ped][fam][side][curGen] = new Person[numPersons];
 
 	  if (sexSpecificMaps) {
-	    // the two individuals that reproduce are index 0 (a founder) and 1
-	    // randomly decide which one to make female
-	    int theFemale = coinFlip(randomGen);
-	    theSamples[ped][fam][side][curGen][theFemale].sex = 1;
+	    if (pedType == 'd' && curGen == 1) {
+	      // won't randomize the sex assignment for the second generation
+	      // when simulating double cousins. Want to use the convention that
+	      // ind 1 from one side has children with ind 0 from the other side
+	      // therefore, we don't want the sexes to be randomly assigned
+	      theSamples[ped][fam][side][curGen][1].sex = 1;
+	    }
+	    else {
+	      // the two individuals that reproduce are index 0 (a founder) and
+	      // 1 randomly decide which one to make female
+	      int theFemale = coinFlip(randomGen);
+	      theSamples[ped][fam][side][curGen][theFemale].sex = 1;
+	    }
 	  }
 	}
+      }
 
-	////////////////////////////////////////////////////////////////////////
-	// Simulate all the generations for the current pedigree/family/side
-	for(int curGen = 1; curGen < numGen; curGen++) {
+      ////////////////////////////////////////////////////////////////////////
+      // All samples allocated: Simulate all the generations for the current
+      // pedigree/family
+      //
+      // Although the side index is before the generation index, we use the
+      // below order for the loop. It is necessary for simulating double
+      // cousins which require information from both sides to produce the
+      // third generation.  Thus all of the second generation -- from both
+      // sides -- must have been simulated to successfully simulate the third
+      // generation on either side.
+      for(int curGen = 1; curGen < numGen; curGen++) {
+	for(int side = 0; side < 2; side++) {
 
 	  // for each chromosome:
-	  for(auto it = geneticMap.begin(); it != geneticMap.end(); it++) {
-	    vector<PhysGeneticPos> *curMap = it->second;
+	  for(unsigned int chrIdx = 0; chrIdx < geneticMap.size(); chrIdx++) {
+	    vector<PhysGeneticPos> *curMap = geneticMap[chrIdx].second;
 
 	    // Make trivial haplotypes for generation 0 founders:
 	    // no recombinations in founders
@@ -417,10 +456,24 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  if (pedType == 'h' && side == 1 && par == 0)
 		    // shared parent -- make identical to side 0 below
 		    trivialSeg.foundHapNum =
-		      theSamples[ped][fam][0][0][0].haps[h].back().back().
-								    foundHapNum;
-		  else
-		    trivialSeg.foundHapNum = totalFounderHaps++;
+		      theSamples[ped][fam][0][0][0].haps[h].back().
+							    back().foundHapNum;
+		  else {
+		    if (chrIdx == 0)
+		      // new sample: new haplotype index:
+		      trivialSeg.foundHapNum = totalFounderHaps++;
+		    else
+		      // want the same founder on all chromosomes, so access
+		      // the haplotype number assigned to the previous
+		      // chromosome for this person:
+		      trivialSeg.foundHapNum =
+			theSamples[ped][fam][side][0][par].haps[h].back().
+							    back().foundHapNum;
+		  }
+		  // Note: pedType == 'd' will create two separate sets of
+		  // parents for the two sides automatically with this code.
+		  // This is what we want.
+
 		  // makes a copy of <trivialSeg>, can reuse
 		  theSamples[ped][fam][side][0][par].haps[h].emplace_back();
 		  theSamples[ped][fam][side][0][par].haps[h].back().push_back(
@@ -431,7 +484,12 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	    // First make trivial haplotypes for the two founders in <curGen>;
 	    // use convention that sample 0 is the founder on each side:
-	    if (curGen != numGen -1) { // no founders in the last generation
+	    //
+	    // no founders in the last generation and
+	    // TODO: document this
+	    // no founders in second generation when pedType == 'd' -- the two
+	    // full sibs on both sides reproduce to create the next generation
+	    if (curGen != numGen - 1 && !(pedType == 'd' && curGen == 1)) {
 	      for(int h = 0; h < 2; h++) {
 		// 4 founder haplotypes per generation
 		trivialSeg.foundHapNum = totalFounderHaps++;
@@ -450,11 +508,18 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    numPersons++;
 
 	    // Now simulate the non-founders in <curGen>
-	    for(int ind = 1; ind < numPersons; ind++) {
-	      if (sexSpecificMaps) {
-		assert(theSamples[ped][fam][side][curGen-1][0].sex !=
+	    int startInd = 1;
+	    if (pedType == 'd' && curGen == 1)
+	      // As per above, individual 0 is not a founder in the second
+	      // generation for double cousins simulations, so want to simulate
+	      // this person (as a sibling of individual 1)
+	      startInd = 0;
+	    for(int ind = startInd; ind < numPersons; ind++) {
+	      // If we're using sex-specific maps, the two parents' sexes should
+	      // differ:
+	      assert(!sexSpecificMaps ||
+		      theSamples[ped][fam][side][curGen-1][0].sex !=
 				  theSamples[ped][fam][side][curGen-1][1].sex);
-	      }
 	      for(int parIdx = 0; parIdx < 2; parIdx++) {
 		int hapIdx = parIdx;
 		if (sexSpecificMaps)
@@ -462,16 +527,25 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 		theSamples[ped][fam][side][curGen][ind].haps[hapIdx].
 								 emplace_back();
+		Person *theParent;
+		if (pedType == 'd' && curGen == 2 && parIdx == 0) {
+		  // for double cousins, in the third generation, have ind 1
+		  // on one side have children with ind 0 on the other side
+		  int othrSide = side ^ 1;
+		  theParent = &theSamples[ped][fam][othrSide][curGen-1][parIdx];
+		}
+		else {
+		  theParent = &theSamples[ped][fam][side][curGen-1][parIdx];
+		}
+
 		generateHaplotype(
 		    theSamples[ped][fam][side][curGen][ind].haps[hapIdx].back(),
-		    /*parent=*/ theSamples[ped][fam][side][curGen-1][parIdx],
-		    curMap);
-	      }
+		    *theParent, curMap);
+	      } // <parIdx> (simulate each transmitted haplotype)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
-	} // <curGen>
-
-      } // <side>
+	} // <side>
+      } // <curGen>
     } // <fam>
 
   } // <ped>
