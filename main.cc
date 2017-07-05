@@ -11,18 +11,18 @@
 
 // TODO: command line options for printing phased VCF and for retaining a
 //       specified number of unused samples
-// TODO: ability to specify multiply factor in each generation
 
 using namespace std;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
-  SimDetails(char t, int nF, int nG, int *retain) {
+  SimDetails(char t, int nFam, int nGen, int *retain, int *mult) {
     type = t;
-    numFam = nF;
-    numGen = nG;
+    numFam = nFam;
+    numGen = nGen;
     numSampsToRetain = retain;
+    multiplicity = mult;
   }
   // type: either 'f' for full sibs/cousins, 'h' for half sibs/cousins, or
   // 'd' for double cousins
@@ -30,6 +30,7 @@ struct SimDetails {
   int numFam;
   int numGen;
   int *numSampsToRetain;
+  int *multiplicity;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,6 +62,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      bool sexSpecificMaps);
+void makeParents(Person *parents[2], char pedType, bool sexSpecificMaps);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
@@ -106,10 +108,9 @@ int main(int argc, char **argv) {
   // the pedigree to be simulated in the dat file
   // The second index is the family: we replicate the same pedigree structure
   // some number of times as specified in the dat file
-  // The third index is the side of the pedigree (0 or 1) -- in the second
-  // generation (generation index 1 here), two full or half siblings become the
-  // parents of each side
-  // The fourth index is the generation number (0-based)
+  // The third index is the generation number (0-based)
+  // The fourth index is the branch of the pedigree; the number of branches
+  // is determined by the multiplicity
   // The fifth index is the individual number
   Person *****theSamples;
 
@@ -148,7 +149,13 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   // information for in some of the generations; we store this in an array
   // with length equal to the number of generations to be simulated
   int *curNumSampsToRetain = NULL;
+  // Have variable number of branches in each generation that is determined by
+  // the multiplicity factor stored in the dat file
+  int *curMultiplicity = NULL;
+  // Have we seen an entry in the dat file for the corresponding generation?
+  bool *seen = NULL;
   int curNumGen = 0;
+  char curType = '\0';
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
@@ -168,8 +175,8 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
     if (strcmp(token, "full") == 0 || strcmp(token, "half") == 0 ||
 	strcmp(token, "double") == 0) {
-      // new type of pedigree
-      char *type = token;
+      // new pedigree description
+      curType = token[0];
       char *numFamStr = strtok_r(NULL, delim, &saveptr);
       char *numGenStr = strtok_r(NULL, delim, &saveptr);
       if (numFamStr == NULL || numGenStr == NULL ||
@@ -182,7 +189,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       int curNumFam = atoi(numFamStr);
       curNumGen = atoi(numGenStr);
 
-      if (type[0] == 'd' && curNumGen < 3) {
+      if (curType == 'd' && curNumGen < 3) {
 	fprintf(stderr, "ERROR: line %d in dat: request to simulate double cousins with fewer\n",
 		line);
 	fprintf(stderr, "       than 3 generations\n");
@@ -190,19 +197,29 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       }
 
       curNumSampsToRetain = new int[curNumGen];
-      for(int i = 0; i < curNumGen; i++)
+      curMultiplicity = new int[curNumGen];
+      if (seen)
+	delete [] seen;
+      seen = new bool[curNumGen];
+      for(int i = 0; i < curNumGen; i++) {
+	// initially
 	curNumSampsToRetain[i] = 0;
-      simDetails.emplace_back(type[0], curNumFam, curNumGen,
-			      curNumSampsToRetain);
+	curMultiplicity[i] = 1;
+	seen[i] = false;
+      }
+      curMultiplicity[1] = 2; // default
+      simDetails.emplace_back(curType, curNumFam, curNumGen,
+			      curNumSampsToRetain, curMultiplicity);
       continue;
     }
 
     // line contains information about sample storage for the current pedigree
     char *genNumStr = token;
     char *numSampsStr = strtok_r(NULL, delim, &saveptr);
+    char *multStr = strtok_r(NULL, delim, &saveptr);
 
     if (numSampsStr == NULL || strtok_r(NULL, delim, &saveptr) != NULL) {
-      printf("ERROR: improper line number %d in dat file: expected two fields\n",
+      printf("ERROR: improper line number %d in dat file: expected two or three fields\n",
 	      line);
     }
 
@@ -215,25 +232,66 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       fprintf(stderr, "       of generations)\n");
       exit(1);
     }
-    if (numSamps <= 0) {
-      fprintf(stderr, "ERROR: line %d in dat: in generation %d, number of samples to simulate\n",
+    if (numSamps < 0) {
+      fprintf(stderr, "ERROR: line %d in dat: in generation %d, number of samples to print\n",
 	      line, generation);
       fprintf(stderr, "       below 0\n");
       exit(2);
     }
-    if (generation == 1 && numSamps != 1) {
+    if (generation == 1 && numSamps > 1) {
       fprintf(stderr, "ERROR: line %d in dat: in generation 1, if founders are to be printed must\n",
 	      line);
-      fprintf(stderr, "       list 1 as the nubmer to be printed (others invalid)\n");
+      fprintf(stderr, "       list 1 as the number to be printed (others invalid)\n");
       exit(2);
     }
 
     // subtract 1 because array is 0 based
-    if (curNumSampsToRetain[generation - 1] != 0) {
+    if (seen[generation - 1]) {
       fprintf(stderr, "ERROR: line %d in dat: multiple entries for generation %d\n",
 	      line, generation);
+      exit(2);
     }
     curNumSampsToRetain[generation - 1] = numSamps;
+    seen[generation - 1] = true;
+
+    if (multStr != NULL) {
+      int mult = atoi(multStr);
+
+      if (generation == curNumGen && mult != 0) {
+	fprintf(stderr, "ERROR: line %d in dat: last generation %d multiplicity factor non-zero\n",
+	    line, generation);
+	exit(2);
+      }
+      else if (generation != curNumGen && mult <= 0) {
+	fprintf(stderr, "ERROR: line %d in dat: in generation %d, multiplicity factor zero or below\n",
+		line, generation);
+	exit(2);
+      }
+      else if (generation == 1 && curType != 'f' && mult != 2) {
+	fprintf(stderr, "ERROR: line %d in dat: for half and double type pedigrees, generation 1\n",
+		line);
+	fprintf(stderr, "       multiplicity factor must be 2\n");
+	exit(2);
+      }
+      // TODO: remove this, I think -- any other rules?
+      // TODO: one rule we could consider making is that multiplicity of
+      // curNumGen - 1 is always 1. If it's > 1, you end up with distinct
+      // branches that are in fact full siblings of each other; it's probably
+      // simpler if these are forced to be in the same branch
+//      else if (generation == 2 && type[0] == 'd' && mult != 1) {
+//	fprintf(stderr, "ERROR: line %d in dat: for double type pedigrees, in generation 2,\n",
+//		line);
+//	fprintf(stderr, "       multiplicity must be 1\n");
+//	exit(2);
+//      }
+      else if (generation < curNumGen)
+	// Note: the arrays are 0-based vs. the dat file 1-based in terms of
+	// generations. The fact that we assign the index <generation> and
+	// not <generation>-1 reflects the fact that the multiplicity in one
+	// generation affects the number of branches in the next generation, not
+	// the one listed.
+	curMultiplicity[generation] = mult;
+    }
   }
 
   for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
@@ -346,6 +404,12 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    // Note: we modify this such that it stores the number of branches in each
+    // generation below. To make the code more intuitive, we'll use different
+    // names for the <multiplicity> and <numBranches> arrays, but since we
+    // never reuse the multiplicity values, they're both in fact the same array
+    int *multiplicity = simDetails[ped].multiplicity;
+    int *numBranches = multiplicity; // to be updated below
 
     ////////////////////////////////////////////////////////////////////////////
     // Allocate space and make Person objects for all those we will simulate,
@@ -353,91 +417,80 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     theSamples[ped] = new Person***[numFam];
     for (int fam = 0; fam < numFam; fam++) {
 
-      // Make Person objects for the top-most generation
-      // array of size 2 for the parents used on each side
+      theSamples[ped][fam] = new Person**[numGen];
+
+      // Allocate space for first generation and make top-most generation
+      // parents. For full siblings, have only one set of parents, for other
+      // types, have two sets:
+      if (fam == 0) // only need assign once
+	numBranches[0] = (pedType == 'f') ? 1 : 2;
+      theSamples[ped][fam][0] = new Person*[ numBranches[0] ];
+      // We have an array of size two since, for the half-sib and double cousin
+      // simulation, the multiplicity in the first generation is required to
+      // be 2. We only use index 0 for full siblings.
       Person *parents[2];
-      if (pedType == 'f') {
-	// full siblings in second generation: same parents for both sides:
-	parents[0] = parents[1] = new Person[2];
-	if (sexSpecificMaps)
-	  parents[0][1].sex = 1;
-      }
-      else if (pedType == 'h') {
-	// half-siblings in second generation: one shared parent
-	// because we're not using pointers here but actual Person objects,
-	// we'll make two copies of the same founder; see below
-	parents[0] = new Person[2];
-	parents[1] = new Person[2];
+      makeParents(parents, pedType, sexSpecificMaps);
 
-	// decide whether the shared parent -- index 0 in each parents array --
-	// is male or female
-	int sharedParSex = coinFlip(randomGen);
-	parents[0][0].sex = parents[1][0].sex = sharedParSex;
-	// opposite for other parent:
-	parents[0][1].sex = parents[1][1].sex = 1 ^ sharedParSex;
-      }
-      else if (pedType == 'd') {
-	// double cousins: two completely separate sets of parents for the
-	// two sides, and two full siblings on each side reproduce to create
-	// the double cousins in the third generation
-	parents[0] = new Person[2];
-	parents[1] = new Person[2];
-	if (sexSpecificMaps)
-	  parents[0][1].sex = parents[1][1].sex = 1;
-      }
-      else {
-	fprintf(stderr, "ERROR: unsupported pedigree type %c\n", pedType);
-	exit(5);
+      for(int branch = 0; branch < numBranches[0]; branch++) {
+	theSamples[ped][fam][0][branch] = parents[branch];
       }
 
-      // Always exactly 2 sides (may extend this later)
-      theSamples[ped][fam] = new Person**[2];
-      for(int side = 0; side < 2; side++) { // each side of current family
+      // Now all other generations:
+      for(int curGen = 1; curGen < numGen; curGen++) {
+	// first work out what the number of branches is
+	int curMult;
+	if (fam == 0) { // only do the below updates once
+	  curMult = multiplicity[curGen];
+	  if (curGen == 1 && (pedType == 'h' || pedType == 'd')) {
+	    // In this case, we should have that curMult == 2, but we don't want
+	    // four branches in the second generation but only two. Since the
+	    // first generation had numBranches[0] == 2, must change the
+	    // multiplication factor here in order to get the desired
+	    // numBranches[1] == 2
+	    assert(curMult == 2 && numBranches[0] == 2);
+	    curMult = 1;
+	  }
+	  numBranches[curGen] = numBranches[ curGen - 1 ] * curMult;
+	}
+	else
+	  curMult = numBranches[curGen] / numBranches[curGen-1];
 
-	theSamples[ped][fam][side] = new Person*[numGen];
+	theSamples[ped][fam][curGen] = new Person*[ numBranches[curGen] ];
 
-	theSamples[ped][fam][side][0] = parents[side]; // store parents
+	// Determine how many samples we need data for in each branch in
+	// <curGen>:
+	int numPersons = numSampsToRetain[curGen];
+	if (numPersons == 0) // not saving, but need parent of next generation
+	  numPersons = 1;
+	// additional person that is the other parent of next generation
+	numPersons++;
 
-	for(int curGen = 1; curGen < numGen; curGen++) {
-	  // Determine how many samples we need data for in <curGen>:
-	  int numPersons = numSampsToRetain[curGen];
-	  if (numPersons == 0) // not saving, but need parent of next generation
-	    numPersons = 1;
-	  // additional person that is the other parent of next generation
-	  numPersons++;
 
-	  theSamples[ped][fam][side][curGen] = new Person[numPersons];
+	// allocate Persons for each branch of <curGen> and assign their sex
+	// ... and do the simulation for these allocated individuals
+	for(int branch = 0; branch < numBranches[curGen]; branch++) {
+	  theSamples[ped][fam][curGen][branch] = new Person[numPersons];
 
 	  if (sexSpecificMaps) {
 	    if (pedType == 'd' && curGen == 1) {
 	      // won't randomize the sex assignment for the second generation
-	      // when simulating double cousins. Want to use the convention that
-	      // ind 1 from one side has children with ind 0 from the other side
-	      // therefore, we don't want the sexes to be randomly assigned
-	      theSamples[ped][fam][side][curGen][1].sex = 1;
+	      // when simulating double cousins. Want to use the convention
+	      // that ind 1 from one branch has children with ind 0 from the
+	      // other branch. Therefore, we don't want the sexes to be
+	      // randomly assigned
+	      theSamples[ped][fam][curGen][branch][1].sex = 1;
 	    }
 	    else {
 	      // the two individuals that reproduce are index 0 (a founder) and
 	      // 1 randomly decide which one to make female
-	      int theFemale = coinFlip(randomGen);
-	      theSamples[ped][fam][side][curGen][theFemale].sex = 1;
+	      int femaleIdx = coinFlip(randomGen);
+	      theSamples[ped][fam][curGen][branch][femaleIdx].sex = 1;
 	    }
 	  }
-	}
-      }
 
-      ////////////////////////////////////////////////////////////////////////
-      // All samples allocated: Simulate all the generations for the current
-      // pedigree/family
-      //
-      // Although the side index is before the generation index, we use the
-      // below order for the loop. It is necessary for simulating double
-      // cousins which require information from both sides to produce the
-      // third generation.  Thus all of the second generation -- from both
-      // sides -- must have been simulated to successfully simulate the third
-      // generation on either side.
-      for(int curGen = 1; curGen < numGen; curGen++) {
-	for(int side = 0; side < 2; side++) {
+	  /////////////////////////////////////////////////////////////////////
+	  // All samples allocated for this pedigree/family/generation/branch:
+	  // simulate the actual samples
 
 	  // for each chromosome:
 	  for(unsigned int chrIdx = 0; chrIdx < geneticMap.size(); chrIdx++) {
@@ -448,15 +501,15 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    Segment trivialSeg;
 	    trivialSeg.endPos = curMap->back().physPos;
 	    if (curGen == 1) {
-	      for(int par = 0; par < 2; par++) {
-		if (pedType == 'f' && side > 0)
-		  // already initialized parents on side == 0, for
+	      for(int par = 0; par < 2; par++) { // each parent
+		if (pedType == 'f' && branch > 0)
+		  // already initialized parents for branch == 0, and for
 		  // pedType == 'f' they're the same objects so no need to
 		  // change anything
 		  break;
 		for(int h = 0; h < 2; h++) {
-		  if (pedType == 'h' && side == 1 && par == 0)
-		    // shared parent -- make identical to side 0 below
+		  if (pedType == 'h' && branch == 1 && par == 0)
+		    // shared parent -- make identical to branch 0
 		    trivialSeg.foundHapNum =
 		      theSamples[ped][fam][0][0][0].haps[h].back().
 							    back().foundHapNum;
@@ -469,23 +522,23 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		      // the haplotype number assigned to the previous
 		      // chromosome for this person:
 		      trivialSeg.foundHapNum =
-			theSamples[ped][fam][side][0][par].haps[h].back().
+			theSamples[ped][fam][0][branch][par].haps[h].back().
 							    back().foundHapNum;
 		  }
 		  // Note: pedType == 'd' will create two separate sets of
-		  // parents for the two sides automatically with this code.
-		  // This is what we want.
+		  // parents for the two branches/sides automatically with this
+		  // code. This is what we want.
 
 		  // makes a copy of <trivialSeg>, can reuse
-		  theSamples[ped][fam][side][0][par].haps[h].emplace_back();
-		  theSamples[ped][fam][side][0][par].haps[h].back().push_back(
+		  theSamples[ped][fam][0][branch][par].haps[h].emplace_back();
+		  theSamples[ped][fam][0][branch][par].haps[h].back().push_back(
 								    trivialSeg);
 		}
 	      }
 	    }
 
 	    // First make trivial haplotypes for the two founders in <curGen>;
-	    // use convention that sample 0 is the founder on each side:
+	    // use convention that sample 0 is the founder in each branch:
 	    //
 	    // no founders in the last generation and
 	    // TODO: document this
@@ -494,22 +547,28 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    if (curGen != numGen - 1 && !(pedType == 'd' && curGen == 1)) {
 	      for(int h = 0; h < 2; h++) {
 		// 4 founder haplotypes per generation
-		trivialSeg.foundHapNum = totalFounderHaps++;
+		if (chrIdx == 0)
+		  trivialSeg.foundHapNum = totalFounderHaps++;
+		else
+		  // want the same founder on all chromosomes, so access
+		  // the haplotype number assigned to the previous
+		  // chromosome for this person:
+		  trivialSeg.foundHapNum =
+			theSamples[ped][fam][curGen][branch][0].haps[h].back().
+							    back().foundHapNum;
+
 		// the following copies <trivialSeg>, so we can reuse it
-		theSamples[ped][fam][side][curGen][0].haps[h].emplace_back();
-		theSamples[ped][fam][side][curGen][0].haps[h].back().push_back(
-								    trivialSeg);
+		theSamples[ped][fam][curGen][branch][0].haps[h].emplace_back();
+		theSamples[ped][fam][curGen][branch][0].haps[h].back().
+							  push_back(trivialSeg);
 	      }
 	    }
 
-	    int numPersons = numSampsToRetain[curGen];
-	    if (numPersons == 0)
-	      // not saving any, but need parent of next generation
-	      numPersons = 1;
-	    // additional person that is the other parent of next generation
-	    numPersons++;
-
-	    // Now simulate the non-founders in <curGen>
+	    // Now simulate the non-founders in <branch> of <curGen>
+	    // We take parents from the current branch number divided by the
+	    // multiplicity factor. Thus, each branch in the previous generation
+	    // produces <curMult> new branches in the current one:
+	    int prvBrch = branch / curMult;
 	    int startInd = 1;
 	    if (pedType == 'd' && curGen == 1)
 	      // As per above, individual 0 is not a founder in the second
@@ -520,39 +579,82 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	      // If we're using sex-specific maps, the two parents' sexes should
 	      // differ:
 	      assert(!sexSpecificMaps ||
-		      theSamples[ped][fam][side][curGen-1][0].sex !=
-				  theSamples[ped][fam][side][curGen-1][1].sex);
+		      theSamples[ped][fam][curGen-1][prvBrch][0].sex !=
+				theSamples[ped][fam][curGen-1][prvBrch][1].sex);
 	      for(int parIdx = 0; parIdx < 2; parIdx++) {
+		// haplotype index for the simulated sample
 		int hapIdx = parIdx;
 		if (sexSpecificMaps)
-		  hapIdx = theSamples[ped][fam][side][curGen-1][parIdx].sex;
+		  // match the sex of the parent if using sex-specific maps
+		  hapIdx = theSamples[ped][fam][curGen-1][prvBrch][parIdx].sex;
 
-		theSamples[ped][fam][side][curGen][ind].haps[hapIdx].
+		theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].
 								 emplace_back();
 		Person *theParent;
 		if (pedType == 'd' && curGen == 2 && parIdx == 0) {
 		  // for double cousins, in the third generation, have ind 1
-		  // on one side have children with ind 0 on the other side
-		  int othrSide = side ^ 1;
-		  theParent = &theSamples[ped][fam][othrSide][curGen-1][parIdx];
+		  // on one side/branch have children with ind 0 on the other
+		  // side/branch
+		  assert(curMult == 1 && numBranches[1] == 2); // sanity check
+		  int othrBrnch = branch ^ 1;
+		  theParent =&theSamples[ped][fam][curGen-1][othrBrnch][parIdx];
 		}
 		else {
-		  theParent = &theSamples[ped][fam][side][curGen-1][parIdx];
+		  theParent = &theSamples[ped][fam][curGen-1][prvBrch][parIdx];
 		}
 
 		generateHaplotype(
-		    theSamples[ped][fam][side][curGen][ind].haps[hapIdx].back(),
-		    *theParent, curMap);
+		  theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].back(),
+		  *theParent, curMap);
 	      } // <parIdx> (simulate each transmitted haplotype)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
-	} // <side>
+	} // <branch>
       } // <curGen>
     } // <fam>
 
   } // <ped>
 
   return totalFounderHaps;
+}
+
+// Allocate Person objects for the parents in the top-most generation. The
+// way this is setup depends on the pedigree type: full, half, or double
+void makeParents(Person *parents[2], char pedType, bool sexSpecificMaps) {
+  if (pedType == 'f') {
+    // full siblings in second generation: same parents for all branches
+    parents[0] = new Person[2];
+    if (sexSpecificMaps)
+      parents[0][1].sex = 1;
+    parents[1] = NULL;
+  }
+  else if (pedType == 'h') {
+    // half-siblings in second generation: one shared parent because we're not
+    // using pointers here but actual Person objects, we'll make two copies of
+    // the same founder; this is done in simulate()
+    parents[0] = new Person[2];
+    parents[1] = new Person[2];
+
+    // decide whether the shared parent -- index 0 in each parents array --
+    // is male or female
+    int sharedParSex = coinFlip(randomGen);
+    parents[0][0].sex = parents[1][0].sex = sharedParSex;
+    // opposite for other parent:
+    parents[0][1].sex = parents[1][1].sex = 1 ^ sharedParSex;
+  }
+  else if (pedType == 'd') {
+    // double cousins: two completely separate sets of parents for the two
+    // sides/branches, and two full siblings from each side/branch reproduce to
+    // create the double cousins in the third generation
+    parents[0] = new Person[2];
+    parents[1] = new Person[2];
+    if (sexSpecificMaps)
+      parents[0][1].sex = parents[1][1].sex = 1;
+  }
+  else {
+    fprintf(stderr, "ERROR: unsupported pedigree type %c\n", pedType);
+    exit(5);
+  }
 }
 
 // Simulate one haplotype <toGenerate> by sampling crossovers and switching
@@ -668,19 +770,19 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    // The simulate() method updated the multiplicity array to store the
+    // number of branches per generation
+    int *numBranches = simDetails[ped].multiplicity;
 
     for(int fam = 0; fam < numFam; fam++) {
-      for(int side = 0; side < 2; side++) {
-	for(int gen = 0; gen < numGen; gen++) {
+      for(int gen = 0; gen < numGen; gen++) {
+	for(int branch = 0; branch < numBranches[gen]; branch++) {
 	  if (numSampsToRetain[gen] > 0) {
 	    for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
 	      if (gen == 0) {
-		if (pedType == 'f' && side > 0)
-		  // for pedtype == 'f', same top-most generation founders
-		  // on both sides; need only print once, so bug out of
-		  // this loop
-		  break;
-		if (pedType == 'h' && side > 0 && ind == 0)
+		// should only be one set of parents / branch for pedType == 'f'
+		assert(pedType != 'f' || branch == 0);
+		if (pedType == 'h' && branch > 0 && ind == 0)
 		  // for pedType == 'h', ind 0 in the top-most generation is
 		  // the same person; need only print once, so skip
 		  continue;
@@ -691,14 +793,15 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 		continue;
 
 	      for(int h = 0; h < 2; h++) {
-		fprintf(out, "%c%d_f%d_s%d_g%d_i%d h%d", pedType, ped+1, fam+1,
-			side, gen+1, ind, h);
+		int sex = theSamples[ped][fam][gen][branch][ind].sex;
+		fprintf(out, "%c%d_f%d_b%d_g%d_i%d s%d h%d", pedType, ped+1,
+			fam+1, branch, gen+1, ind, sex, h);
 
 		for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
 		  // print chrom name and starting position
 		  fprintf(out, " %s|%d", geneticMap[chr].first,
 			  geneticMap[chr].second->front().physPos);
-		  Haplotype &curHap = theSamples[ped][fam][side][gen][ind].
+		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
 								   haps[h][chr];
 		  for(unsigned int s = 0; s < curHap.size(); s++) {
 		    Segment &seg = curHap[s];
@@ -813,19 +916,20 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int numFam = simDetails[ped].numFam;
 	int numGen = simDetails[ped].numGen;
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+	// The simulate() method updated the multiplicity array to store the
+	// number of branches per generation
+	int *numBranches = simDetails[ped].multiplicity;
 
 	for(int fam = 0; fam < numFam; fam++)
-	  for(int side = 0; side < 2; side++)
-	    for(int gen = 0; gen < numGen; gen++)
+	  for(int gen = 0; gen < numGen; gen++)
+	    for(int branch = 0; branch < numBranches[gen]; branch++)
 	      if (numSampsToRetain[gen] > 0)
 		for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
 		  if (gen == 0) {
-		    if (pedType == 'f' && side > 0)
-		      // for pedtype == 'f', same top-most generation founders
-		      // on both sides; need only print once, so bug out of
-		      // this loop
-		      break;
-		    if (pedType == 'h' && side > 0 && ind == 0)
+		    // should only be one set of parents / branch for
+		    // pedType == 'f'
+		    assert(pedType != 'f' || branch == 0);
+		    if (pedType == 'h' && branch > 0 && ind == 0)
 		      // for pedType == 'h', ind 0 in the top-most generation is
 		      // the same person; need only print once, so skip
 		      continue;
@@ -834,8 +938,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    // no founders (by convention stored as ind == 0) in the
 		    // last generation
 		    continue;
-		  fprintf(out, "\t%c%d_f%d_s%d_g%d_i%d", pedType, ped+1, fam+1,
-			  side, gen+1, ind);
+		  fprintf(out, "\t%c%d_f%d_b%d_g%d_i%d", pedType, ped+1, fam+1,
+			  branch, gen+1, ind);
 		}
       }
 
@@ -936,19 +1040,20 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       int numFam = simDetails[ped].numFam;
       int numGen = simDetails[ped].numGen;
       int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+      // The simulate() method updated the multiplicity array to store the
+      // number of branches per generation
+      int *numBranches = simDetails[ped].multiplicity;
 
       for(int fam = 0; fam < numFam; fam++)
-	for(int side = 0; side < 2; side++)
-	  for(int gen = 0; gen < numGen; gen++)
+	for(int gen = 0; gen < numGen; gen++)
+	  for(int branch = 0; branch < numBranches[gen]; branch++)
 	    if (numSampsToRetain[gen] > 0)
 	      for(int ind = 0; ind < numSampsToRetain[gen] + 1; ind++) {
 		if (gen == 0) {
-		  if (pedType == 'f' && side > 0)
-		    // for pedtype == 'f', same top-most generation founders
-		    // on both sides; need only print once, so bug out of
-		    // this loop
-		    break;
-		  if (pedType == 'h' && side > 0 && ind == 0)
+		  // should only be one set of parents / branch for
+		  // pedType == 'f'
+		  assert(pedType != 'f' || branch == 0);
+		  if (pedType == 'h' && branch > 0 && ind == 0)
 		    // for pedType == 'h', ind 0 in the top-most generation is
 		    // the same person; need only print once, so skip
 		    continue;
@@ -958,7 +1063,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  // last generation
 		  continue;
 		for(int h = 0; h < 2; h++) {
-		  Haplotype &curHap = theSamples[ped][fam][side][gen][ind].
+		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
 								haps[h][chrIdx];
 		  while (curHap.front().endPos < pos) {
 		    pop_front(curHap);
