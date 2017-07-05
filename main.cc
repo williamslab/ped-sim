@@ -17,12 +17,12 @@ using namespace std;
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
-  SimDetails(char t, int nFam, int nGen, int *retain, int *mult) {
+  SimDetails(char t, int nFam, int nGen, int *retain, int *branches) {
     type = t;
     numFam = nFam;
     numGen = nGen;
     numSampsToRetain = retain;
-    multiplicity = mult;
+    numBranches = branches;
   }
   // type: either 'f' for full sibs/cousins, 'h' for half sibs/cousins, or
   // 'd' for double cousins
@@ -30,7 +30,7 @@ struct SimDetails {
   int numFam;
   int numGen;
   int *numSampsToRetain;
-  int *multiplicity;
+  int *numBranches;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -149,9 +149,8 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   // information for in some of the generations; we store this in an array
   // with length equal to the number of generations to be simulated
   int *curNumSampsToRetain = NULL;
-  // Have variable number of branches in each generation that is determined by
-  // the multiplicity factor stored in the dat file
-  int *curMultiplicity = NULL;
+  // Have variable number of branches in each generation
+  int *curNumBranches = NULL;
   // Have we seen an entry in the dat file for the corresponding generation?
   bool *seen = NULL;
   int curNumGen = 0;
@@ -175,6 +174,33 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
     if (strcmp(token, "full") == 0 || strcmp(token, "half") == 0 ||
 	strcmp(token, "double") == 0) {
+
+      if (curNumBranches) {
+	// Before processing the next pedigree, check that the branch counts
+	// in each generation are feasible and update any missing generation
+	// counts
+	assert(curNumBranches[0] == 2); // Should remain the default (ignored)
+	for(int gen = 1; gen < curNumGen; gen++) {
+	  if (!seen[gen]) {
+	    curNumBranches[gen] = curNumBranches[ gen - 1 ];
+	  }
+	  else {
+	    if (curNumBranches[gen] < curNumBranches[ gen - 1 ]) {
+	      fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+		      line, gen+1);
+	      fprintf(stderr, "       is less than the branch number in previous generation\n");
+	      exit(2);
+	    }
+	    if (curNumBranches[gen] % curNumBranches[ gen - 1 ] != 0) {
+	      fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+		      line, gen+1);
+	      fprintf(stderr, "       is not a multiple of the branch number in previous generation\n");
+	      exit(2);
+	    }
+	  }
+	}
+      }
+
       // new pedigree description
       curType = token[0];
       char *numFamStr = strtok_r(NULL, delim, &saveptr);
@@ -197,26 +223,27 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       }
 
       curNumSampsToRetain = new int[curNumGen];
-      curMultiplicity = new int[curNumGen];
+      curNumBranches = new int[curNumGen];
       if (seen)
 	delete [] seen;
       seen = new bool[curNumGen];
-      for(int i = 0; i < curNumGen; i++) {
+      for(int gen = 0; gen < curNumGen; gen++) {
 	// initially
-	curNumSampsToRetain[i] = 0;
-	curMultiplicity[i] = 1;
-	seen[i] = false;
+	curNumSampsToRetain[gen] = 0;
+	// default of two branches in each generation; first generation is a bit
+	// different and the value here is ignored
+	curNumBranches[gen] = 2;
+	seen[gen] = false;
       }
-      curMultiplicity[1] = 2; // default
       simDetails.emplace_back(curType, curNumFam, curNumGen,
-			      curNumSampsToRetain, curMultiplicity);
+			      curNumSampsToRetain, curNumBranches);
       continue;
     }
 
     // line contains information about sample storage for the current pedigree
     char *genNumStr = token;
     char *numSampsStr = strtok_r(NULL, delim, &saveptr);
-    char *multStr = strtok_r(NULL, delim, &saveptr);
+    char *branchStr = strtok_r(NULL, delim, &saveptr);
 
     if (numSampsStr == NULL || strtok_r(NULL, delim, &saveptr) != NULL) {
       printf("ERROR: improper line number %d in dat file: expected two or three fields\n",
@@ -254,45 +281,53 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     curNumSampsToRetain[generation - 1] = numSamps;
     seen[generation - 1] = true;
 
-    if (multStr != NULL) {
-      int mult = atoi(multStr);
+    if (branchStr != NULL) {
+      int genBranchNum = atoi(branchStr);
 
-      if (generation == curNumGen && mult != 0) {
-	fprintf(stderr, "ERROR: line %d in dat: last generation %d multiplicity factor non-zero\n",
-	    line, generation);
-	exit(2);
+      if (generation == 1) {
+	fprintf(stderr, "WARNING: line %d in dat: branch number in generation 1 ignored\n",
+		line);
       }
-      else if (generation != curNumGen && mult <= 0) {
-	fprintf(stderr, "ERROR: line %d in dat: in generation %d, multiplicity factor zero or below\n",
+      else if (genBranchNum <= 0) {
+	fprintf(stderr, "ERROR: line %d in dat: in generation %d, branch number zero or below\n",
 		line, generation);
 	exit(2);
       }
-      else if (generation == 1 && curType != 'f' && mult != 2) {
-	fprintf(stderr, "ERROR: line %d in dat: for half and double type pedigrees, generation 1\n",
+      else if (generation == 2 && curType != 'f' && genBranchNum != 2) {
+	fprintf(stderr, "ERROR: line %d in dat: for half and double type pedigrees, generation 2\n",
 		line);
-	fprintf(stderr, "       multiplicity factor must be 2\n");
+	fprintf(stderr, "       branch number must be 2\n");
 	exit(2);
       }
-      // TODO: remove this, I think -- any other rules?
-      // TODO: one rule we could consider making is that multiplicity of
-      // curNumGen - 1 is always 1. If it's > 1, you end up with distinct
-      // branches that are in fact full siblings of each other; it's probably
-      // simpler if these are forced to be in the same branch
-//      else if (generation == 2 && type[0] == 'd' && mult != 1) {
-//	fprintf(stderr, "ERROR: line %d in dat: for double type pedigrees, in generation 2,\n",
-//		line);
-//	fprintf(stderr, "       multiplicity must be 1\n");
-//	exit(2);
-//      }
-      else if (generation < curNumGen)
-	// Note: the arrays are 0-based vs. the dat file 1-based in terms of
-	// generations. The fact that we assign the index <generation> and
-	// not <generation>-1 reflects the fact that the multiplicity in one
-	// generation affects the number of branches in the next generation, not
-	// the one listed.
-	curMultiplicity[generation] = mult;
+      else {
+	curNumBranches[generation - 1] = genBranchNum;
+      }
     }
   }
+
+  // Check that the branch counts in each generation are feasible and update
+  // any missing generation counts
+  assert(curNumBranches[0] == 2); // Should remain the default (ignored)
+  for(int gen = 1; gen < curNumGen; gen++) {
+    if (!seen[gen]) {
+      curNumBranches[gen] = curNumBranches[ gen - 1 ];
+    }
+    else {
+      if (curNumBranches[gen] < curNumBranches[ gen - 1 ]) {
+	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+	    line, gen+1);
+	fprintf(stderr, "       is less than the branch number in previous generation\n");
+	exit(2);
+      }
+      if (curNumBranches[gen] % curNumBranches[ gen - 1 ] != 0) {
+	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+	    line, gen+1);
+	fprintf(stderr, "       is not a multiple of the branch number in previous generation\n");
+	exit(2);
+      }
+    }
+  }
+
 
   for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
     if (it->numSampsToRetain[ it->numGen - 1 ] == 0) {
@@ -404,12 +439,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
-    // Note: we modify this such that it stores the number of branches in each
-    // generation below. To make the code more intuitive, we'll use different
-    // names for the <multiplicity> and <numBranches> arrays, but since we
-    // never reuse the multiplicity values, they're both in fact the same array
-    int *multiplicity = simDetails[ped].multiplicity;
-    int *numBranches = multiplicity; // to be updated below
+    int *numBranches = simDetails[ped].numBranches;
 
     ////////////////////////////////////////////////////////////////////////////
     // Allocate space and make Person objects for all those we will simulate,
@@ -438,22 +468,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
       // Now all other generations:
       for(int curGen = 1; curGen < numGen; curGen++) {
 	// first work out what the number of branches is
-	int curMult;
-	if (fam == 0) { // only do the below updates once
-	  curMult = multiplicity[curGen];
-	  if (curGen == 1 && (pedType == 'h' || pedType == 'd')) {
-	    // In this case, we should have that curMult == 2, but we don't want
-	    // four branches in the second generation but only two. Since the
-	    // first generation had numBranches[0] == 2, must change the
-	    // multiplication factor here in order to get the desired
-	    // numBranches[1] == 2
-	    assert(curMult == 2 && numBranches[0] == 2);
-	    curMult = 1;
-	  }
-	  numBranches[curGen] = numBranches[ curGen - 1 ] * curMult;
-	}
-	else
-	  curMult = numBranches[curGen] / numBranches[curGen-1];
+	int curMult = numBranches[curGen] / numBranches[curGen - 1];
 
 	theSamples[ped][fam][curGen] = new Person*[ numBranches[curGen] ];
 
@@ -772,7 +787,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     // The simulate() method updated the multiplicity array to store the
     // number of branches per generation
-    int *numBranches = simDetails[ped].multiplicity;
+    int *numBranches = simDetails[ped].numBranches;
 
     for(int fam = 0; fam < numFam; fam++) {
       for(int gen = 0; gen < numGen; gen++) {
@@ -918,7 +933,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 	// The simulate() method updated the multiplicity array to store the
 	// number of branches per generation
-	int *numBranches = simDetails[ped].multiplicity;
+	int *numBranches = simDetails[ped].numBranches;
 
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int gen = 0; gen < numGen; gen++)
@@ -1042,7 +1057,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       int *numSampsToRetain = simDetails[ped].numSampsToRetain;
       // The simulate() method updated the multiplicity array to store the
       // number of branches per generation
-      int *numBranches = simDetails[ped].multiplicity;
+      int *numBranches = simDetails[ped].numBranches;
 
       for(int fam = 0; fam < numFam; fam++)
 	for(int gen = 0; gen < numGen; gen++)
