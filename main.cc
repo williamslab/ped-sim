@@ -57,6 +57,7 @@ struct Person {
 ////////////////////////////////////////////////////////////////////////////////
 // Function decls
 void readDat(vector<SimDetails> &simDetails, char *datFile);
+void updateNumBranches(int *numBranches, int numGen, int line);
 void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps);
 int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
@@ -177,28 +178,9 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
       if (curNumBranches) {
 	// Before processing the next pedigree, check that the branch counts
-	// in each generation are feasible and update any missing generation
+	// in each generation are feasible and update any unspecified generation
 	// counts
-	assert(curNumBranches[0] == 2); // Should remain the default (ignored)
-	for(int gen = 1; gen < curNumGen; gen++) {
-	  if (!seen[gen]) {
-	    curNumBranches[gen] = curNumBranches[ gen - 1 ];
-	  }
-	  else {
-	    if (curNumBranches[gen] < curNumBranches[ gen - 1 ]) {
-	      fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
-		      line, gen+1);
-	      fprintf(stderr, "       is less than the branch number in previous generation\n");
-	      exit(2);
-	    }
-	    if (curNumBranches[gen] % curNumBranches[ gen - 1 ] != 0) {
-	      fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
-		      line, gen+1);
-	      fprintf(stderr, "       is not a multiple of the branch number in previous generation\n");
-	      exit(2);
-	    }
-	  }
-	}
+	updateNumBranches(curNumBranches, curNumGen, line);
       }
 
       // new pedigree description
@@ -230,9 +212,9 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       for(int gen = 0; gen < curNumGen; gen++) {
 	// initially
 	curNumSampsToRetain[gen] = 0;
-	// default of two branches in each generation; first generation is a bit
-	// different and the value here is ignored
-	curNumBranches[gen] = 2;
+	// set to -1 initially so we know these are unassigned; will update
+	// later
+	curNumBranches[gen] = -1;
 	seen[gen] = false;
       }
       simDetails.emplace_back(curType, curNumFam, curNumGen,
@@ -306,27 +288,8 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   }
 
   // Check that the branch counts in each generation are feasible and update
-  // any missing generation counts
-  assert(curNumBranches[0] == 2); // Should remain the default (ignored)
-  for(int gen = 1; gen < curNumGen; gen++) {
-    if (!seen[gen]) {
-      curNumBranches[gen] = curNumBranches[ gen - 1 ];
-    }
-    else {
-      if (curNumBranches[gen] < curNumBranches[ gen - 1 ]) {
-	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
-	    line, gen+1);
-	fprintf(stderr, "       is less than the branch number in previous generation\n");
-	exit(2);
-      }
-      if (curNumBranches[gen] % curNumBranches[ gen - 1 ] != 0) {
-	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
-	    line, gen+1);
-	fprintf(stderr, "       is not a multiple of the branch number in previous generation\n");
-	exit(2);
-      }
-    }
-  }
+  // any unspecified generation counts
+  updateNumBranches(curNumBranches, curNumGen, line);
 
 
   for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
@@ -357,6 +320,34 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   }
 
   fclose(in);
+}
+
+// Check that the branch counts in each generation are feasible and update
+// any unspecified generation counts
+void updateNumBranches(int *numBranches, int numGen, int line) {
+  // First generation should not have been modified; we now set it to the
+  // default:
+  assert(numBranches[0] == -1);
+  numBranches[0] = 2;
+  for(int gen = 1; gen < numGen; gen++) {
+    if (numBranches[gen] == -1) { // unmodified: match to previous generation
+      numBranches[gen] = numBranches[ gen - 1 ];
+    }
+    else {
+      if (numBranches[gen] < numBranches[ gen - 1 ]) {
+	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+	    line, gen+1);
+	fprintf(stderr, "       is less than the branch number in previous generation\n");
+	exit(2);
+      }
+      if (numBranches[gen] % numBranches[ gen - 1 ] != 0) {
+	fprintf(stderr, "ERROR: pedigree above line %d in dat: number of branches in generation %d\n",
+	    line, gen+1);
+	fprintf(stderr, "       is not a multiple of the branch number in previous generation\n");
+	exit(2);
+      }
+    }
+  }
 }
 
 // Read in genetic map from <mapFile> into <geneticMap>. Also determines whether
