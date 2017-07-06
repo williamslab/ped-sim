@@ -10,7 +10,10 @@
 #include <assert.h>
 
 // TODO: command line options for printing phased VCF and for retaining a
-//       specified number of unused samples
+//       specified number of unused samples and for setting the random seed
+
+#define VERSION_NUMBER	"0.8b"
+#define RELEASE_DATE	"6 Jul 2017"
 
 using namespace std;
 
@@ -68,10 +71,12 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      char *outFile);
+	      char *bpFile);
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap);
+void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
+	      char *famFile);
 template<typename T>
 void pop_front(vector<T> &vec);
 void printUsage(char **argv);
@@ -83,8 +88,24 @@ exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  if (argc != 6) {
+  if (argc != 5) {
     printUsage(argv);
+  }
+
+  char *datFile = argv[1];
+  char *mapFile = argv[2];
+  char *inVCFfile = argv[3];
+  char *outBase = argv[4];
+
+  int outBaseLen = strlen(outBase);
+  char *outFile = new char[ outBaseLen + 4 + 1 ]; // +4 for .vcf, + 1 for \0
+
+  // open the log file
+  sprintf(outFile, "%s.log", outBase);
+  FILE *log = fopen(outFile, "w");
+  if (!log) {
+    printf("ERROR: could not open log file %s!\n", outFile);
+    exit(1);
   }
 
   // seed random number generator:
@@ -95,42 +116,70 @@ int main(int argc, char **argv) {
     seed = chrono::system_clock::now().time_since_epoch().count();
   }
 //  seed = 695558636u; // for testing
-  printf("Using random seed: %u\n\n", seed);
   randomGen.seed(seed);
 
+  FILE *outs[2] = { stdout, log };
+
+  for(int o = 0; o < 2; o++) {
+    fprintf(outs[o], "Pedigree simulator!  v%s    (Released %s)\n\n",
+	    VERSION_NUMBER, RELEASE_DATE);
+
+    fprintf(outs[o], "Dat file:\t\t%s\n", datFile);
+    fprintf(outs[o], "Map file:\t\t%s\n", mapFile);
+    fprintf(outs[o], "Input VCF:\t\t%s\n", inVCFfile);
+    fprintf(outs[o], "Output base filename:\t%s\n\n", outBase);
+
+    fprintf(outs[o], "Random seed:\t\t%u\n\n", seed);
+  }
+
   vector<SimDetails> simDetails;
-  readDat(simDetails, /*datFile=*/ argv[1]);
+  readDat(simDetails, datFile);
 
   vector< pair<char*, vector<PhysGeneticPos>* > > geneticMap;
   bool sexSpecificMaps;
-  readMap(geneticMap, /*mapFile=*/ argv[2], sexSpecificMaps);
+  readMap(geneticMap, mapFile, sexSpecificMaps);
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the dat file
   // The second index is the family: we replicate the same pedigree structure
   // some number of times as specified in the dat file
   // The third index is the generation number (0-based)
-  // The fourth index is the branch of the pedigree; the number of branches
-  // is determined by the multiplicity
+  // The fourth index is the branch of the pedigree
   // The fifth index is the individual number
   Person *****theSamples;
 
-  printf("Simulating... ");
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "Simulating haplotype transmissions... ");
   fflush(stdout);
   int totalFounderHaps = simulate(simDetails, theSamples, geneticMap,
 				  sexSpecificMaps);
-  printf("done.\n");
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "done.\n");
 
-  printf("Printing break points... ");
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "Printing break points... ");
   fflush(stdout);
-  printBPs(simDetails, theSamples, geneticMap, /*outFile=*/ argv[5]);
-  printf("done.\n");
+  sprintf(outFile, "%s.bp", outBase);
+  printBPs(simDetails, theSamples, geneticMap, /*bpFile=*/ outFile);
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "done.\n");
 
-  printf("Generating VCF file... ");
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "Generating VCF file... ");
   fflush(stdout);
-  makeVCF(simDetails, theSamples, totalFounderHaps, /*inVCFfile=*/ argv[3],
-	  /*outVCFfile=*/ argv[4], geneticMap);
-  printf("done.\n");
+  sprintf(outFile, "%s.vcf", outBase);
+  makeVCF(simDetails, theSamples, totalFounderHaps, inVCFfile,
+	  /*outVCFfile=*/ outFile, geneticMap);
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "done.\n");
+
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "Printing fam file... ");
+  fflush(stdout);
+  sprintf(outFile, "%s.fam", outBase);
+  printFam(simDetails, theSamples, /*famFile=*/ outFile);
+  for(int o = 0; o < 2; o++)
+    fprintf(outs[o], "done.\n");
 
   return 0;
 }
@@ -446,9 +495,9 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
       if (fam == 0) // only need assign once
 	numBranches[0] = (pedType == 'f') ? 1 : 2;
       theSamples[ped][fam][0] = new Person*[ numBranches[0] ];
-      // We have an array of size two since, for the half-sib and double cousin
-      // simulation, the multiplicity in the first generation is required to
-      // be 2. We only use index 0 for full siblings.
+      // We must have an array of size two for the half-sib and double cousin
+      // simulation because the they have two sets of parents (half-sibs copies
+      // one parent). We only use index 0 for full siblings.
       Person *parents[2];
       makeParents(parents, pedType, sexSpecificMaps);
 
@@ -764,10 +813,10 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 // Print the break points to <outFile>
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      char *outFile) {
-  FILE *out = fopen(outFile, "w");
+	      char *bpFile) {
+  FILE *out = fopen(bpFile, "w");
   if (!out) {
-    printf("ERROR: could not open output file %s!\n", outFile);
+    printf("ERROR: could not open output file %s!\n", bpFile);
     exit(1);
   }
 
@@ -776,8 +825,6 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
-    // The simulate() method updated the multiplicity array to store the
-    // number of branches per generation
     int *numBranches = simDetails[ped].numBranches;
 
     for(int fam = 0; fam < numFam; fam++) {
@@ -922,8 +969,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int numFam = simDetails[ped].numFam;
 	int numGen = simDetails[ped].numGen;
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
-	// The simulate() method updated the multiplicity array to store the
-	// number of branches per generation
 	int *numBranches = simDetails[ped].numBranches;
 
 	for(int fam = 0; fam < numFam; fam++)
@@ -1046,8 +1091,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       int numFam = simDetails[ped].numFam;
       int numGen = simDetails[ped].numGen;
       int *numSampsToRetain = simDetails[ped].numSampsToRetain;
-      // The simulate() method updated the multiplicity array to store the
-      // number of branches per generation
       int *numBranches = simDetails[ped].numBranches;
 
       for(int fam = 0; fam < numFam; fam++)
@@ -1097,6 +1140,97 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   fclose(in);
 }
 
+// print fam format file with the pedigree structure of all individuals included
+// in the simulation
+void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
+	      char *famFile) {
+  // open output fam file:
+  FILE *out = fopen(famFile, "w");
+  if (!out) {
+    printf("ERROR: could not open output fam file %s!\n", famFile);
+    exit(1);
+  }
+
+  for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+    char pedType = simDetails[ped].type;
+    int numFam = simDetails[ped].numFam;
+    int numGen = simDetails[ped].numGen;
+    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    int *numBranches = simDetails[ped].numBranches;
+
+    for(int fam = 0; fam < numFam; fam++) {
+      for(int gen = 0; gen < numGen; gen++) {
+	int curMult = 1;
+	if (gen > 0)
+	  curMult = numBranches[gen] / numBranches[gen - 1];
+	for(int branch = 0; branch < numBranches[gen]; branch++) {
+	  int limit;
+	  if (numSampsToRetain[gen] > 0)
+	    limit = numSampsToRetain[gen] + 1;
+	  else
+	    // always 2 samples per branch when user didn't request printing
+	    limit = 2;
+
+	  for(int ind = 0; ind < limit; ind++) {
+	    if (gen == 0) {
+	      // should only be one set of parents / branch for pedType == 'f'
+	      assert(pedType != 'f' || branch == 0);
+	      if (pedType == 'h' && branch > 0 && ind == 0)
+		// for pedType == 'h', ind 0 in the top-most generation is
+		// the same person; need only print once, so skip
+		continue;
+	    }
+	    if (ind == 0 && gen == numGen-1)
+	      // no founders (by convention stored as ind == 0) in the
+	      // last generation
+	      continue;
+
+	    // print family id (PLINK-specific) and sample id
+	    fprintf(out, "%c%d_f%d %c%d_f%d_b%d_g%d_i%d ",
+		    pedType, ped+1, fam+1, pedType, ped+1, fam+1, branch,
+		    gen+1, ind);
+
+	    // print parents
+	    if (gen == 0 || ind == 0) {
+	      // first generation or ind == 0 are founders, so they have no
+	      // parents
+	      fprintf(out, "0 0 ");
+	    }
+	    else {
+	      int prevBranch = branch / curMult;
+	      int founderSex = theSamples[ped][fam][gen-1][prevBranch][0].sex;
+	      // if founderSex == 0, ind 0 is male (and vice versa), so:
+	      int maleInd = founderSex;
+	      for(int p = 0; p < 2; p++) {
+		int curInd = maleInd ^ p; // switch sex / ind for parent 1:
+		int branchToPrint = prevBranch;
+		if (pedType == 'h' && gen == 1 && curInd == 0)
+		  // for half-sibling type pedigrees, the top-most generation
+		  // individual 0 in both branches is the same person and
+		  // must have the same id. To accomplish this, we ensure that
+		  // that sample always has the same branch of 0
+		  branchToPrint = 0;
+		else if (pedType == 'd' && gen == 2 && curInd == 0) {
+		  assert(curMult == 1 && numBranches[1] == 2); // sanity check
+		  branchToPrint = prevBranch ^ 1;
+		}
+		fprintf(out, "%c%d_f%d_b%d_g%d_i%d ", pedType, ped+1, fam+1,
+			branchToPrint, gen, curInd);
+	      }
+	    }
+
+	    // print sex and phenotype:
+	    int sex = theSamples[ped][fam][gen][branch][ind].sex;
+	    fprintf(out, "%d -9\n", sex+1);
+	  }
+	}
+      }
+    }
+  }
+
+  fclose(out);
+}
+
 // removes the first element from <vec>. This has time that is linear in the
 // number of elements. We could use a list<> instead of a vector<> to avoid this
 // linear time, but having random access ability on the vectors is very
@@ -1108,7 +1242,7 @@ void pop_front(vector<T> &vec) {
 
 void printUsage(char **argv) {
   printf("Usage:\n");
-  printf("  %s [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]\n\n", argv[0]);
+  printf("  %s [in.dat] [map file] [in.vcf] [out base name]\n\n", argv[0]);
   printf("Where:\n");
 //  printf("  [numFam] is an integer indicating the number of families to simulate\n");
 //  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");

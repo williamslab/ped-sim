@@ -9,8 +9,9 @@ half-siblings, or (in the third generation) double cousins.
 
 Usage:
 
-    ./ped-sim [in.dat] [map file] [in.vcf] [out.vcf] [out.bp]
+    ./ped-sim [in.dat] [map file] [in.vcf] [out.vcf] [out base name]
 
+<!--TODO: explain what the output files are: vcf, bp, log, fam-->
 <!--TODO: give example-->
 
 ------------------------------------------------------
