@@ -12,8 +12,8 @@
 // TODO: command line options for printing phased VCF and for retaining a
 //       specified number of unused samples and for setting the random seed
 
-#define VERSION_NUMBER	"0.8b"
-#define RELEASE_DATE	"6 Jul 2017"
+#define VERSION_NUMBER	"0.81b"
+#define RELEASE_DATE	"7 Jul 2017"
 
 using namespace std;
 
@@ -88,7 +88,7 @@ exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  if (argc != 5) {
+  if (argc != 5 && argc != 6) {
     printUsage(argv);
   }
 
@@ -109,11 +109,18 @@ int main(int argc, char **argv) {
   }
 
   // seed random number generator:
-  unsigned int seed = random_device().entropy();
-  if (seed == 0 && random_device().entropy() == 0) {
-    // random_device is not a real random number generator: fall back on
-    // using time to generate a seed:
-    seed = chrono::system_clock::now().time_since_epoch().count();
+  unsigned int seed;
+  if (argc == 6) {
+    // user-specified random seed:
+    seed = atol(argv[5]);
+  }
+  else {
+    seed = random_device().entropy();
+    if (seed == 0 && random_device().entropy() == 0) {
+      // random_device is not a real random number generator: fall back on
+      // using time to generate a seed:
+      seed = chrono::system_clock::now().time_since_epoch().count();
+    }
   }
 //  seed = 695558636u; // for testing
   randomGen.seed(seed);
@@ -528,12 +535,27 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	  if (sexSpecificMaps) {
 	    if (pedType == 'd' && curGen == 1) {
-	      // won't randomize the sex assignment for the second generation
-	      // when simulating double cousins. Want to use the convention
-	      // that ind 1 from one branch has children with ind 0 from the
-	      // other branch. Therefore, we don't want the sexes to be
-	      // randomly assigned
-	      theSamples[ped][fam][curGen][branch][1].sex = 1;
+	      // randomize sex assignment for second generation of double
+	      // cousins, but do so in a way that ensures that there's a male
+	      // and female in each famle that can have children together.
+	      int randomBinary = coinFlip(randomGen);
+	      theSamples[ped][fam][curGen][branch][1].sex = randomBinary;
+	      // when branch == 0, the spouse of the above person is not
+	      // yet allocated; will fix up the assignments when branch == 1.
+	      // It's only necessary for this to be finalized before curGen == 2
+	      if (branch > 0) {
+		// now make the other branch the opposite of the above
+		// assignment:
+		assert(numBranches[curGen] == 2);
+		int otherBranch = branch ^ 1;
+		int oppositeSex = randomBinary ^ 1;
+		theSamples[ped][fam][curGen][otherBranch][0].sex = oppositeSex;
+
+		// and must fix person 0 on this branch to be the opposite of
+		// person 1 on the other branch
+		theSamples[ped][fam][curGen][branch][0].sex =
+		  1 ^ theSamples[ped][fam][curGen][otherBranch][1].sex;
+	      }
 	    }
 	    else {
 	      // the two individuals that reproduce are index 0 (a founder) and
@@ -632,20 +654,25 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	      startInd = 0;
 	    for(int ind = startInd; ind < numPersons; ind++) {
 	      // If we're using sex-specific maps, the two parents' sexes should
-	      // differ:
-	      assert(!sexSpecificMaps ||
-		      theSamples[ped][fam][curGen-1][prvBrch][0].sex !=
+	      // differ
+	      if (sexSpecificMaps) {
+		if (pedType == 'd' && curGen == 2) {
+		  // for double cousins, spouses are on different branches
+		  int othrBrnch = prvBrch ^ 1;
+		  assert(theSamples[ped][fam][curGen-1][prvBrch][1].sex !=
+			    theSamples[ped][fam][curGen-1][othrBrnch][0].sex);
+		}
+		else {
+		  assert(theSamples[ped][fam][curGen-1][prvBrch][0].sex !=
 				theSamples[ped][fam][curGen-1][prvBrch][1].sex);
+		}
+	      }
+
 	      for(int parIdx = 0; parIdx < 2; parIdx++) {
 		// haplotype index for the simulated sample
 		int hapIdx = parIdx;
-		if (sexSpecificMaps)
-		  // match the sex of the parent if using sex-specific maps
-		  hapIdx = theSamples[ped][fam][curGen-1][prvBrch][parIdx].sex;
-
-		theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].
-								 emplace_back();
 		Person *theParent;
+
 		if (pedType == 'd' && curGen == 2 && parIdx == 0) {
 		  // for double cousins, in the third generation, have ind 1
 		  // on one side/branch have children with ind 0 on the other
@@ -658,6 +685,12 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  theParent = &theSamples[ped][fam][curGen-1][prvBrch][parIdx];
 		}
 
+		if (sexSpecificMaps)
+		  // match the sex of the parent if using sex-specific maps
+		  hapIdx = theParent->sex;
+
+		theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].
+								 emplace_back();
 		generateHaplotype(
 		  theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].back(),
 		  *theParent, curMap);
@@ -1191,31 +1224,46 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		    gen+1, ind);
 
 	    // print parents
-	    if (gen == 0 || ind == 0) {
+	    if (gen == 0 || (ind == 0 && (pedType != 'd' || gen != 1))) {
 	      // first generation or ind == 0 are founders, so they have no
-	      // parents
+	      // parents.
+	      // exception is when pedType == 'd' and gen == 1, ind 0 is a
+	      // non-founder
 	      fprintf(out, "0 0 ");
 	    }
-	    else {
+	    else if (pedType != 'd' || gen != 2) {
 	      int prevBranch = branch / curMult;
-	      int founderSex = theSamples[ped][fam][gen-1][prevBranch][0].sex;
-	      // if founderSex == 0, ind 0 is male (and vice versa), so:
-	      int maleInd = founderSex;
+	      int par0sex = theSamples[ped][fam][gen-1][prevBranch][0].sex;
+	      // if par0Sex == 0, ind 0 is male (and vice versa), so:
+	      int maleParInd = par0sex;
 	      for(int p = 0; p < 2; p++) {
-		int curInd = maleInd ^ p; // switch sex / ind for parent 1:
+		// print male parent first (when p == 0); switch ind for p == 1:
+		int curParInd = maleParInd ^ p;
 		int branchToPrint = prevBranch;
-		if (pedType == 'h' && gen == 1 && curInd == 0)
+		if (pedType == 'h' && gen == 1 && curParInd == 0)
 		  // for half-sibling type pedigrees, the top-most generation
 		  // individual 0 in both branches is the same person and
 		  // must have the same id. To accomplish this, we ensure that
 		  // that sample always has the same branch of 0
 		  branchToPrint = 0;
-		else if (pedType == 'd' && gen == 2 && curInd == 0) {
-		  assert(curMult == 1 && numBranches[1] == 2); // sanity check
-		  branchToPrint = prevBranch ^ 1;
-		}
 		fprintf(out, "%c%d_f%d_b%d_g%d_i%d ", pedType, ped+1, fam+1,
-			branchToPrint, gen, curInd);
+			branchToPrint, gen, curParInd);
+	      }
+	    }
+	    else {
+	      // double cousin simulations in generation 2; the parents are in
+	      // two different branches
+	      int prevBranch = branch / curMult;
+	      // Note: par0 is in the other branch
+	      int par1sex = theSamples[ped][fam][gen-1][prevBranch][1].sex;
+	      // if par1Sex == 0, ind 1 is male (and vice versa), so:
+	      int maleParInd = 1 ^ par1sex;
+	      for(int p = 0; p < 2; p++) {
+		// print male parent first (when p == 0); switch ind for p == 1:
+		int curParInd = maleParInd ^ p;
+		int branchToPrint = prevBranch ^ (1 - curParInd);
+		fprintf(out, "%c%d_f%d_b%d_g%d_i%d ", pedType, ped+1, fam+1,
+			branchToPrint, gen, curParInd);
 	      }
 	    }
 
@@ -1242,7 +1290,7 @@ void pop_front(vector<T> &vec) {
 
 void printUsage(char **argv) {
   printf("Usage:\n");
-  printf("  %s [in.dat] [map file] [in.vcf] [out base name]\n\n", argv[0]);
+  printf("  %s [in.dat] [map file] [in.vcf] [out base name] <random seed>\n\n", argv[0]);
   printf("Where:\n");
 //  printf("  [numFam] is an integer indicating the number of families to simulate\n");
 //  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
