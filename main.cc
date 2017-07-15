@@ -68,7 +68,7 @@ int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      bool sexSpecificMaps);
 void makeParents(Person *parents[2], char pedType, bool sexSpecificMaps);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
-		       vector<PhysGeneticPos> *curMap);
+		       vector<PhysGeneticPos> *curMap, unsigned int chrIdx);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
@@ -693,7 +693,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 								 emplace_back();
 		generateHaplotype(
 		  theSamples[ped][fam][curGen][branch][ind].haps[hapIdx].back(),
-		  *theParent, curMap);
+		  *theParent, curMap, chrIdx);
 	      } // <parIdx> (simulate each transmitted haplotype)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
@@ -751,10 +751,10 @@ void makeParents(Person *parents[2], char pedType, bool sexSpecificMaps) {
 // simulated and may contain either one sex-averaged map or a male and female
 // map.
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
-		       vector<PhysGeneticPos> *curMap) {
-  // For the two haplotypes in <parent>, which index is the current
-  // <switchMarker> position contained in?
-  unsigned int curIndex[2] = { 0, 0 };
+		       vector<PhysGeneticPos> *curMap, unsigned int chrIdx) {
+  // For the two haplotypes in <parent>, which segment index (in
+  // parent.haps[].back()) is the current <switchMarker> position contained in?
+  unsigned int curSegIdx[2] = { 0, 0 };
 
   int mapIdx = parent.sex; // either 0 or 1 for sex-averaged/male or female
 
@@ -792,35 +792,35 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
     // copy Segments from <curHap>
     // TODO: comment about back()
-    for( ; curIndex[curHap] < parent.haps[curHap].back().size();
-							  curIndex[curHap]++) {
-      Segment &seg = parent.haps[curHap].back()[ curIndex[curHap] ];
+    for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
+							  curSegIdx[curHap]++) {
+      Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
       if (seg.endPos >= switchPos) {
 	// last segment to copy, and we will break it at <switchPos>
 	Segment copy = seg; // don't modify <seg.endPos> directly
 	copy.endPos = switchPos;
 	toGenerate.push_back(copy);
 	if (seg.endPos == switchPos)
-	  curIndex[curHap]++;
+	  curSegIdx[curHap]++;
 	break; // done copying
       }
       else {
 	toGenerate.push_back(seg);
       }
     }
-    assert(curIndex[curHap] < parent.haps[curHap].back().size());
+    assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
 
     // swap haplotypes
     curHap ^= 1;
-    // must update <curIndex[curHap]>
-    for( ; curIndex[curHap] < parent.haps[curHap].back().size();
-							  curIndex[curHap]++) {
-      Segment &seg = parent.haps[curHap].back()[ curIndex[curHap] ];
+    // must update <curSegIdx[curHap]>
+    for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
+							  curSegIdx[curHap]++) {
+      Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
       if (seg.endPos > switchPos)
 	// current segment spans from just after <switchMarker> to <endMarker>
 	break;
     }
-    assert(curIndex[curHap] < parent.haps[curHap].back().size());
+    assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
 
     cMPosNextCO += crossoverDist(randomGen);
 
@@ -836,9 +836,9 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   }
 
   // copy through to the end of the chromosome:
-  for( ; curIndex[curHap] < parent.haps[curHap].back().size();
-							  curIndex[curHap]++) {
-    Segment &seg = parent.haps[curHap].back()[ curIndex[curHap] ];
+  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
+							  curSegIdx[curHap]++) {
+    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
     toGenerate.push_back(seg);
   }
 }
