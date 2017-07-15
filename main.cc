@@ -12,8 +12,8 @@
 // TODO: command line options for printing phased VCF and for retaining a
 //       specified number of unused samples and for setting the random seed
 
-#define VERSION_NUMBER	"0.81b"
-#define RELEASE_DATE	"7 Jul 2017"
+#define VERSION_NUMBER	"0.82b"
+#define RELEASE_DATE	"15 Jul 2017"
 
 using namespace std;
 
@@ -221,7 +221,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   while (getline(&buffer, &bytesRead, in) >= 0) {
     line++;
 
-    char *token, *saveptr;
+    char *token, *saveptr, *endptr;
     token = strtok_r(buffer, delim, &saveptr);
 
     if (token == NULL || token[0] == '#') {
@@ -250,8 +250,23 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 	fprintf(stderr, "       [full/half/double] [numFam] [numGen]\n");
 	exit(5);
       }
-      int curNumFam = atoi(numFamStr);
-      curNumGen = atoi(numGenStr);
+      int curNumFam = strtol(numFamStr, &endptr, 10);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR line %d in dat: expected number of families to simulate as second token\n",
+		line);
+	if (errno != 0)
+	  perror("strtol");
+	exit(2);
+      }
+      curNumGen = strtol(numGenStr, &endptr, 10);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR line %d in dat: expected number of generations to simulate as third",
+		line);
+	fprintf(stderr, "      token\n");
+	if (errno != 0)
+	  perror("strtol");
+	exit(2);
+      }
 
       if (curType == 'd' && curNumGen < 3) {
 	fprintf(stderr, "ERROR: line %d in dat: request to simulate double cousins with fewer\n",
@@ -288,8 +303,22 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 	      line);
     }
 
-    int generation = atoi(genNumStr);
-    int numSamps = atoi(numSampsStr);
+    int generation = strtol(genNumStr, &endptr, 10);
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR line %d in dat: expected generation number as first token\n",
+	  line);
+      if (errno != 0)
+	perror("strtol");
+      exit(2);
+    }
+    int numSamps = strtol(numSampsStr, &endptr, 10);
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR line %d in dat: expected number of samples to print as second token\n",
+	  line);
+      if (errno != 0)
+	perror("strtol");
+      exit(2);
+    }
 
     if (generation < 1 || generation > curNumGen) { // TODO: document
       fprintf(stderr, "ERROR: line %d in dat: generation %d below 1 or above %d (max number\n",
@@ -320,7 +349,15 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     seen[generation - 1] = true;
 
     if (branchStr != NULL) {
-      int genBranchNum = atoi(branchStr);
+      int genBranchNum = strtol(branchStr, &endptr, 10);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR line %d in dat: optional third token must be numerical value giving\n",
+		line);
+	fprintf(stderr, "      number of branches\n");
+	if (errno != 0)
+	  perror("strtol");
+	exit(2);
+      }
 
       if (generation == 1) {
 	fprintf(stderr, "WARNING: line %d in dat: branch number in generation 1 ignored\n",
@@ -422,7 +459,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     exit(1);
   }
 
-  char *curChr = NULL;
+  char *curChr = NULL, *endptr;
   vector<PhysGeneticPos> *curMap = NULL;
   sexSpecificMaps = false; // will be updated on first pass below
 
@@ -453,10 +490,28 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 
     int physPos;
     double mapPos1, mapPos2 = 0.0;
-    physPos = atoi(physPosStr);
-    mapPos1 = atof(mapPos1Str);
+    physPos = strtol(physPosStr, &endptr, 10);
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR: misformatted map file -- column 2 must be integer physical position\n");
+      if (errno != 0)
+	perror("strtol");
+      exit(2);
+    }
+    mapPos1 = strtod(mapPos1Str, &endptr);
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR: misformatted map file -- column 3 must be floating point genetic position\n");
+      if (errno != 0)
+	perror("strtod");
+      exit(2);
+    }
     if (sexSpecificMaps) {
-      mapPos2 = atof(mapPos2Str);
+      mapPos2 = strtod(mapPos2Str, &endptr);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: misformatted map file -- column 4 must be floating point genetic position\n");
+	if (errno != 0)
+	  perror("strtod");
+	exit(2);
+      }
     }
     else if (mapPos2Str != NULL) {
       fprintf(stderr, "ERROR: expected three columns on all lines in map file but more seen\n");
