@@ -1,0 +1,19 @@
+# generates one simulated pedigree with four generations
+# in generation 2, there are two full siblings, one in each branch
+# these two full siblings each have a pair of offspring that form four branches
+# in generation 3.
+# in generation 4, the four branches each produce one child and these children
+# get printed.
+# Thus, since there are four branches in generation three, two sets of which are
+# full siblings of each other, the final generation has two pairs of first
+# cousins with all other pairwise relationships being second cousins.
+full 1 4  full1_2_cous
+3 0 4
+4 1
+
+# pedigree with the same structure as that given above except that the two
+# children in generation 2 are half-siblings. This results in half-first cousins
+# and half-second cousins in the fourth generation.
+half 1 4  half1_2_cous
+3 0 4
+4 1

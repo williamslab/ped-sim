@@ -2,16 +2,19 @@ Pedigree Simulator
 ==================
 Program to simulate pedigrees containing arbitrary numbers of generations with
 specified numbers of branches in each generation. The method can use
-sex-specific genetic maps and randomly assigns sex of each parent when using
-such maps. Currently, all pedigrees must be symmetric and begin with the oldest
-generation of founders that produce offspring that are either: full siblings,
-half-siblings, or (in the third generation) double cousins.
+sex-specific genetic maps and randomly assigns the sex of each parent when
+using such maps. Currently, all pedigrees must be symmetric and begin with the
+oldest generation of founders that produce offspring that are either: full
+siblings, half-siblings, or (in the third generation) double cousins.
 
 Usage:
 
-    ./ped-sim [in.dat] [map file] [in.vcf] [out.vcf] [out base name]
+    ./ped-sim [in.dat] [map file] [in.vcf] [out_base] <random seed>
 
-<!--TODO: explain what the output files are: vcf, bp, log, fam-->
+The simulator produces four output files: `[out_base].vcf`, `[out_base].bp`,
+`[out_base].fam`, and `[out_base].log`. Descriptions of each of these files
+appear below.
+
 <!--TODO: give example-->
 
 ------------------------------------------------------
@@ -32,14 +35,15 @@ compiling.
 Dat file
 --------
 
-The dat file describes the pedigree structure(s) to be simulated.
-<!--Example dat files are available in example/ and example/-->
+The dat file describes the pedigree structure(s) to be simulated. An example
+dat file is given in `example/full_half_1st_2nd_cousin.dat` and this file is
+described more fully later.
 
 The first line of a pedigree specification contains three columns:
 
-    type #copies #generations
+    type #copies #generations name
 
-Here, `type` is either `full`, `half`, or `double`, corresponding to simulating (more details given below): <!--TODO: more details-->
+Here, `type` is either `full`, `half`, or `double`, corresponding to simulating (more details given below):
 
 * `full`: the samples in generation 2 are to be full siblings of each other
 * `half`: the samples in generation 2 are to be half-siblings of each other
@@ -50,6 +54,10 @@ structure to produce. These pedigrees will all have the same structure but will
 descend from different founders and so be independent.
 
 `#generations` indicate the total number of generations in the pedigree.
+
+`name` gives the name of the pedigree, which must be unique for each pedigree
+structure in a given simulation run (i.e., a given dat file). This is used for
+generating the simulated individuals' sample ids (see below).
 
 After this first line, the dat file lists simulation details corresponding to
 various generations in the pedigree. Each such line has the following format:
@@ -124,6 +132,27 @@ the program simulates separately, using unique founders for all pedigrees
 
 Comments are allowed on a line by themselves beginning with #.
 
+### Example dat file: `example/full_half_1st_2nd_cousins.dat`
+
+The repository includes a dat file (in `example/full_half_1st_2nd_cousins.dat`)
+that simulates two different but closely related pedigree structures. The first
+is a `full` type pedigree so that the children in generation 2 are full siblings
+of each other. The file does not list entries for either generation 1 or 2, and
+therefore produces the default of two branches in generation 2. The
+specification calls for four branches in generation 3, so both children in
+generation 2 produce two children in generation 3, each belong to its own
+branch. Generation 4 is the last generation and produces and prints 1 child per
+existing branch, for a total of four individuals produced. Because the four
+branches in generation 3 included two sets of full siblings, two pairs of these
+four samples are first cousins. The other pairs are second cousins, with their
+most recent common ancestors in generation 1.
+
+The second pedigree structure differs from the first only in that it is a `half`
+type pedigree. This results in the two children that belong to the two (default)
+branches in generation 2 are half-siblings of each other rather than full
+siblings. In consequence, in generation 4, there are two sets of half-first
+cousins and the remaining individuals are half-second cousins.
+
 ------------------------------------------------------
 
 Map file
@@ -148,21 +177,33 @@ correspond to the female genetic position.
 
 <!--TODO: link to 23andMe map-->
 
+------------------------------------------------------
+
 Input VCF file
 --------------
 
 All founders in the simulated pedigrees are a randomly sampled input individual
 from the input VCF file. The VCF must contain phased data for all individuals.
 
+------------------------------------------------------
+
 Output VCF file
 ---------------
 
 The output VCF contains the simulated individuals, including only those samples
-to be printed according to the dat file. For any generation in which there is
-a request to print one or more samples, the simulator prints any founders in
-that generation as well as the non-founders.
+to be printed according to the dat file. For any generation in which there is a
+request to print one or more samples, the simulator prints any founders in that
+generation as well as the non-founders. The file also includes all individuals
+from the input VCF that were not assigned as a founder. Thus, if the input VCF
+contains 100 samples and the simulator only requires 10 founders to perform the
+simulation, the output VCF will contain all the simulated individuals as well
+as the 90 samples that were not used as founders for the simulation. Founder
+assignment is randomized, so different runs using the same input VCF and dat
+file will produce differ
 
-<!--TODO: simulated sample ids-->
+See below for a description of the sample ids for the simulated individuals.
+
+------------------------------------------------------
 
 Output BP file
 --------------
@@ -172,13 +213,53 @@ carries. All founders have a unique numerical id for each of their two
 haplotypes, starting from 0 and ranging to 2\**F*-1, where *F* is the number of
 founders across all simulated pedigrees. Within the BP file, there are two
 lines for every sample that is to be printed (according to the dat file). Each
-line beings with the sample id of the simulated individual, the sex of that
-person, either s0 for male or s1 for female, the haplotype that that line
-describes, h0 or h1, and then a variable number of segments for each simulated
-chromosome.
+line beings with the sample id of the simulated individual (as described
+below), the sex of that person, either s0 for male or s1 for female, the
+haplotype that that line describes, h0 or h1, and then a variable number of
+segments for each simulated chromosome.
 
 <!--TODO: describe remainder of BP file-->
 
+------------------------------------------------------
+
+Output fam file
+---------------
+
+The simulator produces a PLINK format fam file with the pedigree structure of
+the individuals. This fam file includes all generated samples, including those
+that are not requested to be printed in the dat file. This enables the
+relationships between all samples to be determined from the fam file alone.
+
+------------------------------------------------------
+
+Output log file
+---------------
+
+Information about the simulation run, a copy of what is printed to the console
+during execution, appears in the log file. Notably this includes the random seed
+used for a given simulation. Supplying the same input files along with a given
+random seed to the simulator will produce the same simulation data.
+
+------------------------------------------------------
+
+Sample ids for simulated individuals
+------------------------------------
+
+The simulated individuals' sample ids have the format
+`[name][#]_g[#]_b[#]_i[#]`. Here, `[name]` is the pedigree name given in the
+dat file. The first number `[#]` is the copy number of the pedigree which
+ranges from 1 to the number of copies requested in the dat file. The `g[#]`
+portion of the id gives the generation number of the individual, which ranges
+from 1 to the total number of generations in the pedigree. `b[#]` gives the
+branch number the sample is contained in in the indicated generation; this
+ranges from 1 to the total number of branches in that generation. Finally,
+`i[#]` gives the individual number in the given branch and generation. This
+ranges from 0 to the total number of samples requested to be simulated in the
+generation (inclusive). Thus there can be as many as the number of samples to
+be printed plus an additional sample: sample 0 is generally a founder individual
+(with the exception being for generation 2 in double cousin simulations).
+
+------------------------------------------------------
 
 Extra notes
 -----------

@@ -12,20 +12,23 @@
 // TODO: command line options for printing phased VCF and for retaining a
 //       specified number of unused samples and for setting the random seed
 
-#define VERSION_NUMBER	"0.82b"
-#define RELEASE_DATE	"15 Jul 2017"
+#define VERSION_NUMBER	"0.83b"
+#define RELEASE_DATE	"21 Jul 2017"
 
 using namespace std;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
-  SimDetails(char t, int nFam, int nGen, int *retain, int *branches) {
+  SimDetails(char t, int nFam, int nGen, int *retain, int *branches,
+	     char *theName) {
     type = t;
     numFam = nFam;
     numGen = nGen;
     numSampsToRetain = retain;
     numBranches = branches;
+    name = new char[ strlen(theName) + 1 ];
+    strcpy(name, theName);
   }
   // type: either 'f' for full sibs/cousins, 'h' for half sibs/cousins, or
   // 'd' for double cousins
@@ -34,6 +37,7 @@ struct SimDetails {
   int numGen;
   int *numSampsToRetain;
   int *numBranches;
+  char *name;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -243,11 +247,12 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       curType = token[0];
       char *numFamStr = strtok_r(NULL, delim, &saveptr);
       char *numGenStr = strtok_r(NULL, delim, &saveptr);
-      if (numFamStr == NULL || numGenStr == NULL ||
+      char *name = strtok_r(NULL, delim, &saveptr);
+      if (numFamStr == NULL || numGenStr == NULL || name == NULL ||
 				      strtok_r(NULL, delim, &saveptr) != NULL) {
 	fprintf(stderr, "ERROR: line %d in dat: expect three fields for pedigree declaration:\n",
 		line);
-	fprintf(stderr, "       [full/half/double] [numFam] [numGen]\n");
+	fprintf(stderr, "       [full/half/double] [numFam] [numGen] [name]\n");
 	exit(5);
       }
       int curNumFam = strtol(numFamStr, &endptr, 10);
@@ -275,6 +280,16 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 	exit(5);
       }
 
+      // TODO: slow linear search to ensure lack of repetition of the pedigree
+      // names; probably fast enough
+      for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
+	if (strcmp(it->name, name) == 0) {
+	  fprintf(stderr, "ERROR: line %d in dat: name of pedigree is same as previous pedigree\n",
+		  line);
+	  exit(5);
+	}
+      }
+
       curNumSampsToRetain = new int[curNumGen];
       curNumBranches = new int[curNumGen];
       if (seen)
@@ -289,7 +304,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 	seen[gen] = false;
       }
       simDetails.emplace_back(curType, curNumFam, curNumGen,
-			      curNumSampsToRetain, curNumBranches);
+			      curNumSampsToRetain, curNumBranches, name);
       continue;
     }
 
@@ -914,6 +929,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     int *numBranches = simDetails[ped].numBranches;
+    char *pedName = simDetails[ped].name;
 
     for(int fam = 0; fam < numFam; fam++) {
       for(int gen = 0; gen < numGen; gen++) {
@@ -935,8 +951,8 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 
 	      for(int h = 0; h < 2; h++) {
 		int sex = theSamples[ped][fam][gen][branch][ind].sex;
-		fprintf(out, "%c%d_f%d_b%d_g%d_i%d s%d h%d", pedType, ped+1,
-			fam+1, branch, gen+1, ind, sex, h);
+		fprintf(out, "%s%d_g%d_b%d_i%d s%d h%d", pedName, fam+1,
+			gen+1, branch+1, ind, sex, h);
 
 		for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
 		  // print chrom name and starting position
@@ -1058,6 +1074,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int numGen = simDetails[ped].numGen;
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 	int *numBranches = simDetails[ped].numBranches;
+	char *pedName = simDetails[ped].name;
 
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int gen = 0; gen < numGen; gen++)
@@ -1077,8 +1094,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    // no founders (by convention stored as ind == 0) in the
 		    // last generation
 		    continue;
-		  fprintf(out, "\t%c%d_f%d_b%d_g%d_i%d", pedType, ped+1, fam+1,
-			  branch, gen+1, ind);
+		  fprintf(out, "\t%s%d_g%d_b%d_i%d", pedName, fam+1, gen+1,
+			  branch+1, ind);
 		}
       }
 
@@ -1245,6 +1262,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     int *numBranches = simDetails[ped].numBranches;
+    char *pedName = simDetails[ped].name;
 
     for(int fam = 0; fam < numFam; fam++) {
       for(int gen = 0; gen < numGen; gen++) {
@@ -1274,9 +1292,8 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      continue;
 
 	    // print family id (PLINK-specific) and sample id
-	    fprintf(out, "%c%d_f%d %c%d_f%d_b%d_g%d_i%d ",
-		    pedType, ped+1, fam+1, pedType, ped+1, fam+1, branch,
-		    gen+1, ind);
+	    fprintf(out, "%s%d %s%d_g%d_b%d_i%d ",
+		    pedName, fam+1, pedName, fam+1, gen+1, branch+1, ind);
 
 	    // print parents
 	    if (gen == 0 || (ind == 0 && (pedType != 'd' || gen != 1))) {
@@ -1301,8 +1318,8 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		  // must have the same id. To accomplish this, we ensure that
 		  // that sample always has the same branch of 0
 		  branchToPrint = 0;
-		fprintf(out, "%c%d_f%d_b%d_g%d_i%d ", pedType, ped+1, fam+1,
-			branchToPrint, gen, curParInd);
+		fprintf(out, "%s%d_g%d_b%d_i%d ", pedName, fam+1,
+			gen, branchToPrint+1, curParInd);
 	      }
 	    }
 	    else {
@@ -1317,8 +1334,8 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		// print male parent first (when p == 0); switch ind for p == 1:
 		int curParInd = maleParInd ^ p;
 		int branchToPrint = prevBranch ^ (1 - curParInd);
-		fprintf(out, "%c%d_f%d_b%d_g%d_i%d ", pedType, ped+1, fam+1,
-			branchToPrint, gen, curParInd);
+		fprintf(out, "%s%d_g%d_b%d_i%d ", pedName, fam+1,
+			gen, branchToPrint+1, curParInd);
 	      }
 	    }
 
@@ -1344,6 +1361,8 @@ void pop_front(vector<T> &vec) {
 }
 
 void printUsage(char **argv) {
+  printf("Pedigree simulator!  v%s    (Released %s)\n\n",
+	 VERSION_NUMBER, RELEASE_DATE);
   printf("Usage:\n");
   printf("  %s [in.dat] [map file] [in.vcf] [out base name] <random seed>\n\n", argv[0]);
   printf("Where:\n");
