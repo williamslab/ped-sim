@@ -1,12 +1,13 @@
 CPPSRCS= main.cc
-CSRCS= 
+CSRCS= memcpy.c
 OBJS= $(patsubst %.cc,%.o,$(CPPSRCS)) $(patsubst %.c,%.o,$(CSRCS))
 EXEC= ped-sim
 
 GPP = g++
 GCC = gcc
 DEFINES= 
-CFLAGS = -std=c++11 -Wall $(DEFINES)
+CFLAGS = -Wall $(DEFINES)
+CPPFLAGS = -std=c++11
 ifdef DEBUG           # to use run `make DEBUG=1`
   CFLAGS += -g
 else
@@ -21,7 +22,7 @@ ifdef PROFILE       # to use run `make PROFILE=1
   CFLAGS += -pg
 endif
 
-LIBS = 
+LIBS = -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
 
 # dependency variables / commands
 DEPDIR = .deps
@@ -45,7 +46,7 @@ $(EXEC): $(OBJS) $(HEADERS)
 
 .cc.o:
 	@mkdir -p $(DEPDIR)
-	$(GPP) -MMD $(CFLAGS) -o $@ -c $<
+	$(GPP) -MMD $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
 	@cp $*.d $(df).P; \
 	  sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
 	  -e '/^$$/ d' -e 's/$$/ :/' < $*.d >> $(df).P; \

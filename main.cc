@@ -5,7 +5,7 @@
 #include <string.h>
 #include <vector>
 #include <random>
-#include <chrono>
+#include <sys/time.h>
 #include <algorithm>
 #include <assert.h>
 
@@ -123,7 +123,9 @@ int main(int argc, char **argv) {
     if (seed == 0 && random_device().entropy() == 0) {
       // random_device is not a real random number generator: fall back on
       // using time to generate a seed:
-      seed = chrono::system_clock::now().time_since_epoch().count();
+      timeval tv;
+      gettimeofday(&tv, NULL);
+      seed = tv.tv_sec * tv.tv_usec;
     }
   }
 //  seed = 695558636u; // for testing
