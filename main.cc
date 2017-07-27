@@ -12,8 +12,8 @@
 // TODO: command line options for printing phased VCF and for retaining a
 //       specified number of unused samples and for setting the random seed
 
-#define VERSION_NUMBER	"0.83b"
-#define RELEASE_DATE	"21 Jul 2017"
+#define VERSION_NUMBER	"0.84b"
+#define RELEASE_DATE	"27 Jul 2017"
 
 using namespace std;
 
@@ -1236,7 +1236,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       if (shuffHaps[i] >= totalFounderHaps)
 	for(int h = 0; h < 2; h++)
 	  fprintf(out, "%c%s", betweenAlleles[h],
-		  hapAlleles[ shuffHaps[i] + h ]);
+		  hapAlleles[ 2*i + h ]);
     }
 
     fprintf(out, "\n");
