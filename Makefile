@@ -7,7 +7,7 @@ GPP = g++
 GCC = gcc
 DEFINES= 
 CFLAGS = -Wall $(DEFINES)
-CPPFLAGS = -std=c++11
+CPPFLAGS = -std=c++11 $(CFLAGS)
 ifdef DEBUG           # to use run `make DEBUG=1`
   CFLAGS += -g
 else
@@ -46,7 +46,7 @@ $(EXEC): $(OBJS) $(HEADERS)
 
 .cc.o:
 	@mkdir -p $(DEPDIR)
-	$(GPP) -MMD $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
+	$(GPP) -MMD $(CPPFLAGS) -o $@ -c $<
 	@cp $*.d $(df).P; \
 	  sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
 	  -e '/^$$/ d' -e 's/$$/ :/' < $*.d >> $(df).P; \
