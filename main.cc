@@ -1,3 +1,7 @@
+// ped-sim: pedigree simulation tool
+//
+// This program is distributed under the terms of the GNU General Public License
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -8,12 +12,8 @@
 #include <sys/time.h>
 #include <algorithm>
 #include <assert.h>
+#include "cmdlineopts.h"
 
-// TODO: command line options for printing phased VCF and for retaining a
-//       specified number of unused samples and for setting the random seed
-
-#define VERSION_NUMBER	"0.84b"
-#define RELEASE_DATE	"27 Jul 2017"
 
 using namespace std;
 
@@ -78,12 +78,12 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      char *bpFile);
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
-	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap);
+	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	     FILE *outs[2]);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      char *famFile);
 template<typename T>
 void pop_front(vector<T> &vec);
-void printUsage(char **argv);
 
 mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
@@ -92,44 +92,33 @@ exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
-  if (argc != 5 && argc != 6) {
-    printUsage(argv);
-  }
+  bool success = CmdLineOpts::parseCmdLineOptions(argc, argv);
+  if (!success)
+    return -1;
 
-  char *datFile = argv[1];
-  char *mapFile = argv[2];
-  char *inVCFfile = argv[3];
-  char *outBase = argv[4];
-
-  int outBaseLen = strlen(outBase);
-  char *outFile = new char[ outBaseLen + 4 + 1 ]; // +4 for .vcf, + 1 for \0
+  int outPrefixLen = strlen(CmdLineOpts::outPrefix);
+  char *outFile = new char[ outPrefixLen + 4 + 1 ]; // +4 for .vcf, + 1 for \0
 
   // open the log file
-  sprintf(outFile, "%s.log", outBase);
+  sprintf(outFile, "%s.log", CmdLineOpts::outPrefix);
   FILE *log = fopen(outFile, "w");
   if (!log) {
     printf("ERROR: could not open log file %s!\n", outFile);
     exit(1);
   }
 
-  // seed random number generator:
-  unsigned int seed;
-  if (argc == 6) {
-    // user-specified random seed:
-    seed = atol(argv[5]);
-  }
-  else {
-    seed = random_device().entropy();
-    if (seed == 0 && random_device().entropy() == 0) {
+  // seed random number generator if needed
+  if (CmdLineOpts::autoSeed) {
+    CmdLineOpts::randSeed = random_device().entropy();
+    if (CmdLineOpts::randSeed == 0 && random_device().entropy() == 0) {
       // random_device is not a real random number generator: fall back on
       // using time to generate a seed:
       timeval tv;
       gettimeofday(&tv, NULL);
-      seed = tv.tv_sec * tv.tv_usec;
+      CmdLineOpts::randSeed = tv.tv_sec * tv.tv_usec;
     }
   }
-//  seed = 695558636u; // for testing
-  randomGen.seed(seed);
+  randomGen.seed(CmdLineOpts::randSeed);
 
   FILE *outs[2] = { stdout, log };
 
@@ -137,20 +126,37 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "Pedigree simulator!  v%s    (Released %s)\n\n",
 	    VERSION_NUMBER, RELEASE_DATE);
 
-    fprintf(outs[o], "Dat file:\t\t%s\n", datFile);
-    fprintf(outs[o], "Map file:\t\t%s\n", mapFile);
-    fprintf(outs[o], "Input VCF:\t\t%s\n", inVCFfile);
-    fprintf(outs[o], "Output base filename:\t%s\n\n", outBase);
+    fprintf(outs[o], "  Dat file:\t\t%s\n", CmdLineOpts::datFile);
+    fprintf(outs[o], "  Map file:\t\t%s\n", CmdLineOpts::mapFile);
+    fprintf(outs[o], "  Input VCF:\t\t%s\n", CmdLineOpts::inVCFfile);
+    fprintf(outs[o], "  Output prefix:\t%s\n\n", CmdLineOpts::outPrefix);
 
-    fprintf(outs[o], "Random seed:\t\t%u\n\n", seed);
+    fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
+
+    if (CmdLineOpts::retainExtra < 0) {
+      fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
+    }
+    else if (CmdLineOpts::retainExtra == 0) {
+      fprintf(outs[o], "  Not retaining extra samples in output VCF (printing only simulated samples)\n");
+    }
+    else {
+      fprintf(outs[o], "  Retaining %d unused samples in output VCF\n",
+	      CmdLineOpts::retainExtra);
+    }
+    if (CmdLineOpts::keepPhase) {
+      fprintf(outs[o], "  Output VCF will contain phased data\n\n");
+    }
+    else {
+      fprintf(outs[o], "  Output VCF will contain unphased data\n\n");
+    }
   }
 
   vector<SimDetails> simDetails;
-  readDat(simDetails, datFile);
+  readDat(simDetails, CmdLineOpts::datFile);
 
   vector< pair<char*, vector<PhysGeneticPos>* > > geneticMap;
   bool sexSpecificMaps;
-  readMap(geneticMap, mapFile, sexSpecificMaps);
+  readMap(geneticMap, CmdLineOpts::mapFile, sexSpecificMaps);
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the dat file
@@ -161,38 +167,44 @@ int main(int argc, char **argv) {
   // The fifth index is the individual number
   Person *****theSamples;
 
-  for(int o = 0; o < 2; o++)
+  for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "Simulating haplotype transmissions... ");
-  fflush(stdout);
+    fflush(outs[o]);
+  }
   int totalFounderHaps = simulate(simDetails, theSamples, geneticMap,
 				  sexSpecificMaps);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
-  for(int o = 0; o < 2; o++)
+  for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "Printing break points... ");
-  fflush(stdout);
-  sprintf(outFile, "%s.bp", outBase);
+    fflush(outs[o]);
+  }
+  sprintf(outFile, "%s.bp", CmdLineOpts::outPrefix);
   printBPs(simDetails, theSamples, geneticMap, /*bpFile=*/ outFile);
-  for(int o = 0; o < 2; o++)
+  for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "done.\n");
+  }
 
-  for(int o = 0; o < 2; o++)
-    fprintf(outs[o], "Generating VCF file... ");
-  fflush(stdout);
-  sprintf(outFile, "%s.vcf", outBase);
-  makeVCF(simDetails, theSamples, totalFounderHaps, inVCFfile,
-	  /*outVCFfile=*/ outFile, geneticMap);
+  for(int o = 0; o < 2; o++) {
+    fprintf(outs[o], "Initially scanning VCF file... ");
+    fflush(outs[o]);
+  }
+  sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
+  makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
+	  /*outVCFfile=*/ outFile, geneticMap, outs);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "Printing fam file... ");
   fflush(stdout);
-  sprintf(outFile, "%s.fam", outBase);
+  sprintf(outFile, "%s.fam", CmdLineOpts::outPrefix);
   printFam(simDetails, theSamples, /*famFile=*/ outFile);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
+
+  fclose(log);
 
   return 0;
 }
@@ -863,7 +875,6 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 	frac * ((*curMap)[switchIdx+1].physPos - (*curMap)[switchIdx].physPos);
 
     // copy Segments from <curHap>
-    // TODO: comment about back()
     for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
 							  curSegIdx[curHap]++) {
       Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
@@ -985,18 +996,19 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 // haplotypes for each sample to <outVCFfile> in VCF format.
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
-	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap) {
+	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	     FILE *outs[2]) {
   // open input VCF file:
   FILE *in = fopen(inVCFfile, "r");
   if (!in) {
-    printf("ERROR: could not open input VCF file %s!\n", inVCFfile);
+    printf("\nERROR: could not open input VCF file %s!\n", inVCFfile);
     exit(1);
   }
 
   // open output VCF file:
   FILE *out = fopen(outVCFfile, "w");
   if (!out) {
-    printf("ERROR: could not open output VCF file %s!\n", outVCFfile);
+    printf("\nERROR: could not open output VCF file %s!\n", outVCFfile);
     exit(1);
   }
 
@@ -1008,7 +1020,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   const char *bar = "|";
   // Below when we print the VCF output, we alternate printing tab
   // and / between successive alleles. Make this simpler with:
-  const char betweenAlleles[2] = { '\t', '/' };
+  char betweenAlleles[2] = { '\t', '/' };
+  if (CmdLineOpts::keepPhase)
+    betweenAlleles[1] = '|';
 
   char **hapAlleles = NULL; // stores all alleles from input sample
   char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
@@ -1023,6 +1037,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   int numInputSamples = 0;
   vector<int> shuffHaps; // For randomizing the assigned haplotypes
+  vector<int> extraSamples; // Sample indexes to print for --retain_extra
+  // number of elements of <extraSamples> to print (see below)
+  unsigned int numToRetain = 0;
 
   while (getline(&buffer, &bytesRead, in) >= 0) { // read each line of input VCF
     if (buffer[0] == '#' && buffer[1] == '#') {
@@ -1060,9 +1077,50 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       shuffle(shuffHaps.begin(), shuffHaps.end(), randomGen);
 
       if (2 * numInputSamples < totalFounderHaps) {
-	fprintf(stderr, "ERROR: need %d founder haplotypes, but input only contains %d\n",
+	fprintf(stderr, "\nERROR: need %d founder haplotypes, but input only contains %d\n",
 		totalFounderHaps, 2 * numInputSamples);
 	exit(5);
+      }
+
+      // Do math and store sample ids for --retain_extra:
+      unsigned int numExtraSamples = numInputSamples - totalFounderHaps / 2;
+      bool cantRetainEnough = false;
+      if (CmdLineOpts::retainExtra < 0) {
+	numToRetain = numExtraSamples;
+      }
+      else {
+	numToRetain = CmdLineOpts::retainExtra;
+	if (numToRetain > numExtraSamples) {
+	  cantRetainEnough = true;
+	  numToRetain = numExtraSamples;
+	}
+      }
+
+      // Store ids for all extra samples -- those whose shuffled haplotype
+      // assignment is after all that will be used:
+      for(int i = 0; i < numInputSamples; i++) {
+	if (shuffHaps[i] >= totalFounderHaps)
+	  extraSamples.push_back(i);
+      }
+      assert(extraSamples.size() == numExtraSamples);
+
+      // want to randomize which samples get included, though this is only
+      // relevant if we have more samples than are requested to be retained:
+      if (numToRetain < numExtraSamples) {
+	// will print the first <numToRetain> from this list (random subset)
+	shuffle(extraSamples.begin(), extraSamples.end(), randomGen);
+      }
+
+      for(int o = 0; o < 2; o++) {
+	fprintf(outs[o], "done.\n"); // initial scan of VCF file (see main())
+	fprintf(outs[o], "  Input contains %d samples, using %d as founders, and retaining %d\n",
+		numInputSamples, totalFounderHaps / 2, numToRetain);
+	if (cantRetainEnough) {
+	  fprintf(outs[o], "  Note: cannot retain all requested %d samples\n",
+		  CmdLineOpts::retainExtra);
+	}
+	fprintf(outs[o], "Generating VCF file... ");
+	fflush(outs[o]);
       }
 
       // Now print the header line indicating fields and sample ids for the
@@ -1101,11 +1159,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		}
       }
 
-      // print ids for the samples that will not be used in generating the
-      // simulated data
-      for(int i = 0; i < numInputSamples; i++) {
-	if (shuffHaps[i] >= totalFounderHaps)
-	  fprintf(out, "\t%s", sampleIds[i]);
+      // print the ids for the --retain_extra samples:
+      for(unsigned int i = 0; i < numToRetain; i++) {
+	int sampIdx = extraSamples[i];
+	fprintf(out, "\t%s", sampleIds[ sampIdx ]);
       }
 
       fprintf(out, "\n");
@@ -1231,12 +1288,12 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		}
 	      }
     }
-    // print data for samples not used in generating the simulated data
-    for(int i = 0; i < numInputSamples; i++) {
-      if (shuffHaps[i] >= totalFounderHaps)
-	for(int h = 0; h < 2; h++)
-	  fprintf(out, "%c%s", betweenAlleles[h],
-		  hapAlleles[ 2*i + h ]);
+    // print data for the --retain_extra samples:
+    for(unsigned int i = 0; i < numToRetain; i++) {
+      int sampIdx = extraSamples[i];
+      for(int h = 0; h < 2; h++)
+	fprintf(out, "%c%s", betweenAlleles[h],
+		hapAlleles[ 2*sampIdx + h ]);
     }
 
     fprintf(out, "\n");
@@ -1360,23 +1417,4 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 template<typename T>
 void pop_front(vector<T> &vec) {
   vec.erase(vec.begin());
-}
-
-void printUsage(char **argv) {
-  printf("Pedigree simulator!  v%s    (Released %s)\n\n",
-	 VERSION_NUMBER, RELEASE_DATE);
-  printf("Usage:\n");
-  printf("  %s [in.dat] [map file] [in.vcf] [out base name] <random seed>\n\n", argv[0]);
-  printf("Where:\n");
-//  printf("  [numFam] is an integer indicating the number of families to simulate\n");
-//  printf("  [numGen] is an integer specifying the number of generations in the pedigree\n");
-  printf("  [map file] contains either a sex averaged genetic map or both male and\n");
-  printf("             female maps\n\n");
-  printf("  The genetic map file should be formatted with three or four columns:\n\n");
-  printf("    [chrom name] [physical position] [map position1 (cM)] <map position2 (cM)>\n\n");
-  printf("  [chrom name] must match with the names in the VCF file of phased samples\n");
-  printf("  [map position1] gives the sex-averaged map if there are only three columns\n");
-  printf("                  or it gives the male map\n");
-  printf("  [map position2] gives the female map (if using sex-specific maps)\n");
-  exit(1);
 }

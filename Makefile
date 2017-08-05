@@ -1,4 +1,4 @@
-CPPSRCS= main.cc
+CPPSRCS= main.cc cmdlineopts.cc
 CSRCS= memcpy.c
 OBJS= $(patsubst %.cc,%.o,$(CPPSRCS)) $(patsubst %.c,%.o,$(CSRCS))
 EXEC= ped-sim
@@ -22,7 +22,7 @@ ifdef PROFILE       # to use run `make PROFILE=1
   CFLAGS += -pg
 endif
 
-LIBS = -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
+LIBS = 
 
 # dependency variables / commands
 DEPDIR = .deps
@@ -32,6 +32,11 @@ all: $(EXEC)
 
 $(EXEC): $(OBJS) $(HEADERS)
 	$(GPP) -o $(EXEC) $(OBJS) $(CFLAGS) $(LIBS)
+
+# for minimal dependencies on libraries:
+distribute: $(OBJS) $(HEADERS)
+	$(GPP) -o $(EXEC) $(OBJS) $(CFLAGS) $(LIBS) -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
+
 
 # This way of building dependencies (per-file) described at
 # http://make.paulandlesley.org/autodep.html
