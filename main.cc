@@ -1245,8 +1245,13 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       alleles[0] = strtok_r(token, bar, &saveptr2);
       alleles[1] = strtok_r(NULL, bar, &saveptr2);
 
-      for(int h = 0; h < 2; h++)
+      for(int h = 0; h < 2; h++) {
+	if (alleles[h][0] == '.') {
+	  fprintf(stderr, "\nERROR: simulator currently requires all positions to be non-missing\n");
+	  exit(5);
+	}
 	hapAlleles[numStored++] = alleles[h];
+      }
 
       int founderIndex = shuffHaps[ inputIndex ];
       inputIndex++;
