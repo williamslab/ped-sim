@@ -204,7 +204,9 @@ Input VCF file
 --------------
 
 All founders in the simulated pedigrees are a randomly sampled input individual
-from the input VCF file. This VCF must contain phased data for all individuals.
+from the input VCF file. This VCF must contain phased data for all individuals,
+with no missing data for any site. As most phasers automatically impute missing
+data, the latter requirement should be easily met.
 
 ------------------------------------------------------
 
@@ -300,6 +302,40 @@ Other optional arguments
 The `--seed <#>` option enables specification of the random seed to be used.
 Without this option, the simulator generates a random seed using the current
 time (including microseconds).
+
+### Genotyping error rate: `--err_rate <#>`
+
+To more accurately mimic real data, the simulator introduces genotyping errors
+at a specified rate, defaulting to 1e-3. Set this value to 0 to keep the
+allelic values identical to those in the founder haplotypes (from the input
+data).
+
+**Note: only pedigree samples have genotyping errors introduced;
+`--retain\_extra` samples maintain their original calls**
+
+### Rate of opposite homozygote errors: `--err_hom_rate <#>`
+
+SNP array genotype calling works by clustering allele intensities among a set
+of samples. So if an individual is truly homozygous, its intensities are more
+likely to fall in either the correct cluster or the heterozygous cluster, with
+a lower probability of being called homozygous for the opposite allele.  While
+we are unaware of a study that looks at error rates by "true" genotype class in
+SNP array data, the `--err_hom_rate` option provides the ability to produce
+different rates of errors for genotypes that are truly homozygous. The default
+rate for generating an erroneous genotype that is homozygous for the opposite
+alleles relative to the truth is 0.1. That is, when a homozygous genotype is
+set to an erronous value, 10% of the time it is set homozygous for the opposite
+allele, and 90% of the time is heterozygous. For equal rates of both these
+classes, set the rate for this option to .5.
+
+### Missingness rate: `--miss_rate <#>`
+
+As real data includes missingness, the simulator introduces missing genotype
+calls at a rate specified by this parameter, with a default of 5e-3. Set this
+value to 0 for no missing genotypes.
+
+**Note: only pedigree samples have sites set to missing; `--retain\_extra`
+samples maintain their original calls**
 
 ### Maintaining phase in output: `--keep_phase`
 
