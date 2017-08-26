@@ -185,7 +185,18 @@ assign) male and female parents.
 `map_position1` is likewise a genetic position in centiMorgans and should
 correspond to the female genetic position if given.
 
-<!--TODO: link to 23andMe map-->
+A high resolution sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
+and is described in [Bhérer, et al. 2017](http://dx.doi.org/10.1038/ncomms14994).
+To generate a map file in the format the simulator requires with both male and
+female genetic positions, the following works (run through the bash shell):
+
+    printf "#chr\tpos\tmale_cM\tfemale_cM\n" > refined_mf.simmap
+    for chr in {1..22}; do
+      paste male_chr$chr.txt female_chr$chr.txt | awk -v OFS="\t" 'NR > 1 && $2 == $6 {print $1,$2,$4,$8}' | sed 's/^chr//' >> refined_mf.simmap;
+    done
+
+This generates a file called `refined_mf.simmap` that can be passed to the
+simulator.
 
 ------------------------------------------------------
 
