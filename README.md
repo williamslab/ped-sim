@@ -311,7 +311,7 @@ allelic values identical to those in the founder haplotypes (from the input
 data).
 
 **Note: only pedigree samples have genotyping errors introduced;
-`--retain\_extra` samples maintain their original calls**
+`--retain_extra` samples maintain their original calls**
 
 ### Rate of opposite homozygote errors: `--err_hom_rate <#>`
 
@@ -334,7 +334,7 @@ As real data includes missingness, the simulator introduces missing genotype
 calls at a rate specified by this parameter, with a default of 5e-3. Set this
 value to 0 for no missing genotypes.
 
-**Note: only pedigree samples have sites set to missing; `--retain\_extra`
+**Note: only pedigree samples have sites set to missing; `--retain_extra`
 samples maintain their original calls**
 
 ### Maintaining phase in output: `--keep_phase`
