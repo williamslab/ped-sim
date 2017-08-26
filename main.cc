@@ -88,6 +88,9 @@ void pop_front(vector<T> &vec);
 mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
 exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
+bernoulli_distribution genoErr( CmdLineOpts::genoErrRate );
+bernoulli_distribution homErr( CmdLineOpts::homErrRate );
+bernoulli_distribution setMissing( CmdLineOpts::missRate );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -132,6 +135,13 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "  Output prefix:\t%s\n\n", CmdLineOpts::outPrefix);
 
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
+
+    fprintf(outs[o], "  Genotype error rate:\t%.1le\n",
+	    CmdLineOpts::genoErrRate);
+    fprintf(outs[o], "  Opposite homozygous error rate:\t%.2lf\n",
+	    CmdLineOpts::homErrRate);
+    fprintf(outs[o], "  Missingness rate:\t%.1le\n\n",
+	    CmdLineOpts::missRate);
 
     if (CmdLineOpts::retainExtra < 0) {
       fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
@@ -429,7 +439,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
       fprintf(stderr, "ERROR: request to simulate '%s' type pedigree, %d families, %d generations\n",
 	      typeName, it->numFam, it->numGen);
-      fprintf(stderr, "       but no request print any samples from last generation (number %d)\n",
+      fprintf(stderr, "       but no request to print any samples from last generation (number %d)\n",
 	      it->numGen);
       exit(4);
     }
@@ -964,7 +974,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 
 	      for(int h = 0; h < 2; h++) {
 		int sex = theSamples[ped][fam][gen][branch][ind].sex;
-		fprintf(out, "%s%d_g%d_b%d_i%d s%d h%d", pedName, fam+1,
+		fprintf(out, "%s%d_g%d-b%d-i%d s%d h%d", pedName, fam+1,
 			gen+1, branch+1, ind, sex, h);
 
 		for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
@@ -1024,6 +1034,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   if (CmdLineOpts::keepPhase)
     betweenAlleles[1] = '|';
 
+  // Have we encountered / printed a warning for markers with more than 2
+  // alleles (we don't currently introduce errors at such markers)
+  bool alleleCountWarnPrinted = false;
+
   char **hapAlleles = NULL; // stores all alleles from input sample
   char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
 
@@ -1076,9 +1090,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	shuffHaps.push_back(2 * i);
       shuffle(shuffHaps.begin(), shuffHaps.end(), randomGen);
 
-      if (2 * numInputSamples < totalFounderHaps) {
-	fprintf(stderr, "\nERROR: need %d founder haplotypes, but input only contains %d\n",
-		totalFounderHaps, 2 * numInputSamples);
+      if (numInputSamples < totalFounderHaps / 2) {
+	fprintf(stderr, "\nERROR: need %d founders, but input only contains %d\n",
+		totalFounderHaps / 2, numInputSamples);
 	exit(5);
       }
 
@@ -1154,7 +1168,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    // no founders (by convention stored as ind == 0) in the
 		    // last generation
 		    continue;
-		  fprintf(out, "\t%s%d_g%d_b%d_i%d", pedName, fam+1, gen+1,
+		  fprintf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1, gen+1,
 			  branch+1, ind);
 		}
       }
@@ -1204,6 +1218,22 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     for(int i = 0; i < 7; i++)
       otherFields[i] = strtok_r(NULL, tab, &saveptr);
 
+    // count the number of alleles present at this variant; generally this is
+    // 2, but the number of (comma separated) values in the ALT field gives the
+    // exact number
+    char *altField = otherFields[2];
+    int numAlleles = 2;
+    for(int i = 0; altField[i] != '\0'; i++) {
+      if (altField[i] == ',')
+	numAlleles++;
+    }
+    if (numAlleles > 2 && CmdLineOpts::genoErrRate > 0.0 &&
+						      !alleleCountWarnPrinted) {
+      alleleCountWarnPrinted = true;
+      fprintf(stderr, "\nWARNING: genotyping error only implemented for markers with 2 alleles\n");
+      fprintf(stderr, "         will not introduce errors at any markers with >2 alleles\n");
+    }
+
     // read in/store the haplotypes
     int inputIndex = 0;
     int numStored = 0;
@@ -1232,7 +1262,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	exit(5);
       }
       if (strtok_r(NULL, bar, &saveptr2) != NULL) {
-	printf("ERROR: multiple '|' chacters in data field\n");
+	printf("ERROR: multiple '|' characters in data field\n");
 	exit(5);
       }
     }
@@ -1275,6 +1305,18 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  // no founders (by convention stored as ind == 0) in the
 		  // last generation
 		  continue;
+
+		// set to missing (according to the rate set by the user)?
+		if (setMissing( randomGen )) {
+		  for(int h = 0; h < 2; h++)
+		    fprintf(out, "%c.", betweenAlleles[h]);
+		  continue; // done printing genotype data for this sample
+		}
+
+		// non-missing genotype: print, possibly with a genotyping error
+
+		// get founder haps for the current sample
+		uint32_t curFounderHaps[2];
 		for(int h = 0; h < 2; h++) {
 		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
 								haps[h][chrIdx];
@@ -1282,9 +1324,45 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    pop_front(curHap);
 		  }
 		  assert(curHap.front().endPos >= pos);
-		  int foundHapNum = curHap.front().foundHapNum;
-		  fprintf(out, "%c%s", betweenAlleles[h],
-			  founderHaps[foundHapNum]);
+		  curFounderHaps[h] = curHap.front().foundHapNum;
+		}
+
+		// genotyping error?
+		if (genoErr( randomGen ) && numAlleles == 2) {
+		  int alleles[2]; // integer allele values
+		  for(int h = 0; h < 2; h++)
+		    // can get character 0 from founderHaps strings: with only
+		    // two alleles possible, these strings must have length 1.
+		    // converting to an integer is simple: subtract '0'
+		    alleles[h] = founderHaps[ curFounderHaps[h] ][0] - '0';
+
+		  if (alleles[0] != alleles[1]) {
+		    // heterozygous: choose an allele to alter
+		    int alleleToFlip = coinFlip(randomGen);
+		    alleles[ alleleToFlip ] ^= 1;
+		  }
+		  else {
+		    // homozygous: determine whether to change to the opposite
+		    // homozygote or to a heterozygote
+		    if (homErr(randomGen)) {
+		      alleles[0] ^= 1;
+		      alleles[1] ^= 1;
+		    }
+		    else {
+		      // will flip only one allele so that the sample becomes
+		      // heterozygous; randomly choose which
+		      int alleleToFlip = coinFlip(randomGen);
+		      alleles[ alleleToFlip ] ^= 1;
+		    }
+		  }
+
+		  for(int h = 0; h < 2; h++)
+		    fprintf(out, "%c%d", betweenAlleles[h], alleles[h]);
+		}
+		else { // no error: print alleles from original haplotypes
+		  for(int h = 0; h < 2; h++)
+		    fprintf(out, "%c%s", betweenAlleles[h],
+			    founderHaps[ curFounderHaps[h] ]);
 		}
 	      }
     }
@@ -1351,7 +1429,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      continue;
 
 	    // print family id (PLINK-specific) and sample id
-	    fprintf(out, "%s%d %s%d_g%d_b%d_i%d ",
+	    fprintf(out, "%s%d %s%d_g%d-b%d-i%d ",
 		    pedName, fam+1, pedName, fam+1, gen+1, branch+1, ind);
 
 	    // print parents
@@ -1377,7 +1455,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		  // must have the same id. To accomplish this, we ensure that
 		  // that sample always has the same branch of 0
 		  branchToPrint = 0;
-		fprintf(out, "%s%d_g%d_b%d_i%d ", pedName, fam+1,
+		fprintf(out, "%s%d_g%d-b%d-i%d ", pedName, fam+1,
 			gen, branchToPrint+1, curParInd);
 	      }
 	    }
@@ -1393,7 +1471,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		// print male parent first (when p == 0); switch ind for p == 1:
 		int curParInd = maleParInd ^ p;
 		int branchToPrint = prevBranch ^ (1 - curParInd);
-		fprintf(out, "%s%d_g%d_b%d_i%d ", pedName, fam+1,
+		fprintf(out, "%s%d_g%d-b%d-i%d ", pedName, fam+1,
 			gen, branchToPrint+1, curParInd);
 	      }
 	    }

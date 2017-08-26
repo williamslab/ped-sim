@@ -12,20 +12,26 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // define/initialize static members
-char *CmdLineOpts::datFile = NULL;
-char *CmdLineOpts::mapFile = NULL;
-char *CmdLineOpts::inVCFfile = 0;
-char *CmdLineOpts::outPrefix = NULL;
-bool  CmdLineOpts::autoSeed = true;
+char  *CmdLineOpts::datFile = NULL;
+char  *CmdLineOpts::mapFile = NULL;
+char  *CmdLineOpts::inVCFfile = 0;
+char  *CmdLineOpts::outPrefix = NULL;
+bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
-int   CmdLineOpts::keepPhase = 0;
-int   CmdLineOpts::retainExtra = 0;
+double CmdLineOpts::genoErrRate = 1e-3;
+double CmdLineOpts::homErrRate = .1;
+double CmdLineOpts::missRate = 5e-3;
+int    CmdLineOpts::keepPhase = 0;
+int    CmdLineOpts::retainExtra = 0;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   enum {
     RAND_SEED = CHAR_MAX + 1,
     RETAIN_EXTRA,
+    ERR_RATE,
+    ERR_HOM_RATE,
+    MISS_RATE,
   };
 
   static struct option const longopts[] =
@@ -33,6 +39,9 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"seed", required_argument, NULL, RAND_SEED},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
     {"retain_extra", required_argument, NULL, RETAIN_EXTRA},
+    {"err_rate", required_argument, NULL, ERR_RATE},
+    {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
+    {"miss_rate", required_argument, NULL, MISS_RATE},
     {0, 0, 0, 0}
   };
 
@@ -92,6 +101,45 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	  exit(2);
 	}
 	break;
+      case ERR_RATE:
+	genoErrRate = strtod(optarg, &endptr);
+	if (errno != 0 || *endptr != '\0') {
+	  fprintf(stderr, "ERROR: unable to parse --err_rate argument as floating point value\n");
+	  if (errno != 0)
+	    perror("strtod");
+	  exit(2);
+	}
+	if (genoErrRate < 0 || genoErrRate > 1) {
+	  fprintf(stderr, "ERROR: --err_rate value must be between 0 and 1\n");
+	  exit(5);
+	}
+	break;
+      case ERR_HOM_RATE:
+	homErrRate = strtod(optarg, &endptr);
+	if (errno != 0 || *endptr != '\0') {
+	  fprintf(stderr, "ERROR: unable to parse --err_hom_rate argument as floating point value\n");
+	  if (errno != 0)
+	    perror("strtod");
+	  exit(2);
+	}
+	if (homErrRate < 0 || homErrRate > 1) {
+	  fprintf(stderr, "ERROR: --err_hom_rate value must be between 0 and 1\n");
+	  exit(5);
+	}
+	break;
+      case MISS_RATE:
+	missRate = strtod(optarg, &endptr);
+	if (errno != 0 || *endptr != '\0') {
+	  fprintf(stderr, "ERROR: unable to parse --miss_rate argument as floating point value\n");
+	  if (errno != 0)
+	    perror("strtod");
+	  exit(2);
+	}
+	if (missRate < 0 || missRate > 1) {
+	  fprintf(stderr, "ERROR: --miss_rate value must be between 0 and 1\n");
+	  exit(5);
+	}
+	break;
       case RETAIN_EXTRA:
 	retainExtra = strtol(optarg, &endptr, 10);
 	if (errno != 0 || *endptr != '\0') {
@@ -148,6 +196,11 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
+  fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
+  fprintf(out, "\t\t\tgenotyping error at the marker (default .1)\n");
+  fprintf(out, "  --miss_rate <#>\tmissingness rate (default 5e-3; 0 disables)\n");
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
   fprintf(out, "\n");

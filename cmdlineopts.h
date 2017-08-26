@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.85b"
-#define RELEASE_DATE	"5 Aug 2017"
+#define VERSION_NUMBER	"0.87b"
+#define RELEASE_DATE	"26 Aug 2017"
 
 class CmdLineOpts {
   public:
@@ -42,6 +42,15 @@ class CmdLineOpts {
     // User-supplied random seed OR set to the automatically generated seed
     // later
     static unsigned int randSeed;
+
+    // Rate of genotyping error
+    static double genoErrRate;
+
+    // Rate of opposite homozygous genotyping errors
+    static double homErrRate;
+
+    // Rate of missingness
+    static double missRate;
     
     // Keep phase information in output VCF?
     static int keepPhase;

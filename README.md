@@ -261,7 +261,7 @@ Sample ids for simulated individuals
 ------------------------------------
 
 The simulated individuals' sample ids have the format
-`[name][#]_g[#]_b[#]_i[#]`. Here, `[name]` is the pedigree name given in the
+`[name][#]_g[#]-b[#]-i[#]`. Here, `[name]` is the pedigree name given in the
 dat file. The first number `[#]` is the copy number of the pedigree which
 ranges from 1 to the number of copies requested in the dat file. The `g[#]`
 portion of the id gives the generation number of the individual, which ranges
