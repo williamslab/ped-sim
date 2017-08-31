@@ -88,9 +88,6 @@ void pop_front(vector<T> &vec);
 mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
 exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
-bernoulli_distribution genoErr( CmdLineOpts::genoErrRate );
-bernoulli_distribution homErr( CmdLineOpts::homErrRate );
-bernoulli_distribution setMissing( CmdLineOpts::missRate );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -531,14 +528,14 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     double mapPos1, mapPos2 = 0.0;
     physPos = strtol(physPosStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
-      fprintf(stderr, "ERROR: misformatted map file -- column 2 must be integer physical position\n");
+      fprintf(stderr, "ERROR: could not parse column 2 of map file as integer\n");
       if (errno != 0)
 	perror("strtol");
       exit(2);
     }
     mapPos1 = strtod(mapPos1Str, &endptr);
     if (errno != 0 || *endptr != '\0') {
-      fprintf(stderr, "ERROR: misformatted map file -- column 3 must be floating point genetic position\n");
+      fprintf(stderr, "ERROR: could not parse column 3 of map file as floating point\n");
       if (errno != 0)
 	perror("strtod");
       exit(2);
@@ -546,7 +543,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     if (sexSpecificMaps) {
       mapPos2 = strtod(mapPos2Str, &endptr);
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: misformatted map file -- column 4 must be floating point genetic position\n");
+	fprintf(stderr, "ERROR: could not parse column 4 of map file as floating point\n");
 	if (errno != 0)
 	  perror("strtod");
 	exit(2);
@@ -1021,6 +1018,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     printf("\nERROR: could not open output VCF file %s!\n", outVCFfile);
     exit(1);
   }
+
+  bernoulli_distribution genoErr( CmdLineOpts::genoErrRate );
+  bernoulli_distribution homErr( CmdLineOpts::homErrRate );
+  bernoulli_distribution setMissing( CmdLineOpts::missRate );
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
