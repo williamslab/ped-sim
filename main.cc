@@ -457,8 +457,10 @@ void updateNumBranches(int *numBranches, int numGen, int line) {
   // First generation should not have been modified; we now set it to the
   // default:
   assert(numBranches[0] == -1);
-  numBranches[0] = 2;
-  for(int gen = 1; gen < numGen; gen++) {
+  numBranches[0] = 1;
+  if (numBranches[1] == -1)
+    numBranches[1] = 2;
+  for(int gen = 2; gen < numGen; gen++) {
     if (numBranches[gen] == -1) { // unmodified: match to previous generation
       numBranches[gen] = numBranches[ gen - 1 ];
     }
@@ -759,7 +761,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		}
 	      }
 
-	      for(int parIdx = 0; parIdx < 2; parIdx++) {
+	      for(int parIdx = 1; parIdx >= 0; parIdx--) {
 		// haplotype index for the simulated sample
 		int hapIdx = parIdx;
 		Person *theParent;
@@ -803,8 +805,8 @@ void makeParents(Person *parents[2], char pedType, bool sexSpecificMaps) {
   if (pedType == 'f') {
     // full siblings in second generation: same parents for all branches
     parents[0] = new Person[2];
-    if (sexSpecificMaps)
-      parents[0][1].sex = 1;
+    int femaleIdx = coinFlip(randomGen);
+    parents[0][femaleIdx].sex = 1;
     parents[1] = NULL;
   }
   else if (pedType == 'h') {
