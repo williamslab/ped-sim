@@ -1,0 +1,47 @@
+# GRANDPARENTS
+#
+# generates 10 simulated pedigrees with three generations
+# each generation has only 1 branch
+# prints data for the first generation samples (grandparents) and the third
+# generation (grandchild)
+def grandparent 10 3
+1 1 1
+2 0 1
+3 1
+
+# AVUNCULAR
+#
+# generates 10 simulated pedigrees with three generations, but prints the last 2
+# each generation has only 1 branch
+# prints data for the second generation samples (parents and one sibling of one
+# parent) and the third generation (child or neice/nephew)
+def avuncular 10 3
+1 0 1
+2 2 1
+3 1
+
+# HALF-SIBLING
+#
+# generates 10 simulated pedigrees with two generations
+# second generation has two branches
+# with the branch parent specification of 1:1 and 2:1, individual b1-i1 from
+# the first generation is a parent of both branches 1 and 2, but different
+# spouses (with ids b1-s1 and b1-s2) are the parents of these two branches.
+# Thus the printed individuals are half-siblings.
+def hs 10 2
+2 1 2 1:1 2:1
+
+# DOUBLE COUSINS
+#
+# generates 10 simulated pedigrees with three generations
+# first generation has two branches that are independent (new founders)
+# second generation has four branches, with branches 1 and 2 full siblings with
+# each other and branches 3 and 4 full siblings.
+# with the branch specification of 1:1_3 and 2:2_4, individuals b1-i1 and b3-i1
+# from generation 2 are the parents of b1-i1 in generation 3. Likewise,
+# b2-i1 and b4-i1 from generation 2 are the parents of b2-i1 in generation 3.
+# Thus the printed individuals are double cousins.
+def dc 10 3
+1 0 2
+2 0 4
+3 1 2  1:1_3  2:2_4
