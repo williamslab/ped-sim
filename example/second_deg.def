@@ -5,7 +5,7 @@
 # prints data for the first generation samples (grandparents) and the third
 # generation (grandchild)
 def grandparent 10 3
-1 1 1
+1 1
 2 0 1
 3 1
 
@@ -16,7 +16,6 @@ def grandparent 10 3
 # prints data for the second generation samples (parents and one sibling of one
 # parent) and the third generation (child or neice/nephew)
 def avuncular 10 3
-1 0 1
 2 2 1
 3 1
 

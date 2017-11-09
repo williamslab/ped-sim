@@ -1,0 +1,29 @@
+# FIRST AND SECOND COUSINS
+#
+# generates one simulated pedigree with four generations
+# in generation 2, there are two branches that contain one individual each that
+# are full siblings of each other.
+# these two full siblings each have a pair of offspring that form four branches
+# in generation 3.
+# in generation 4, the four branches each produce one child and these children
+# get printed.
+# Thus, since there are four branches in generation three, two sets of which are
+# full siblings of each other, the final generation has two pairs of first
+# cousins with all other pairwise relationships being second cousins.
+def full1-2-cous 1 4
+3 0 4
+4 1
+
+# HALF FIRST AND SECOND COUSINS
+#
+# pedigree with the same structure as that given above except that the two
+# children in generation 2 are half-siblings. To obtain half-siblings, the
+# branch specification lists 1:1 and 2:1: individual b1-i1 from the first
+# generation is the parent of both branches 1 and 2 in generation 2, but with
+# different spouses (with ids b1-s1 and b1-s2).
+# This results in half-first cousins and half-second cousins in the fourth
+# generation.
+def half1-2-cous 1 4
+2 0 2 1:1 2:1
+3 0 4
+4 1

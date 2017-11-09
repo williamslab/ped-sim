@@ -12,7 +12,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // define/initialize static members
-char  *CmdLineOpts::datFile = NULL;
+char  *CmdLineOpts::defFile = NULL;
 char  *CmdLineOpts::mapFile = NULL;
 char  *CmdLineOpts::inVCFfile = 0;
 char  *CmdLineOpts::outPrefix = NULL;
@@ -62,13 +62,13 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	break;
 
       case 'd':
-	if (datFile != NULL) {
+	if (defFile != NULL) {
 	  if (haveGoodArgs)
 	    fprintf(stderr, "\n");
-	  fprintf(stderr, "ERROR: multiple definitions of dat filename\n");
+	  fprintf(stderr, "ERROR: multiple definitions of def filename\n");
 	  haveGoodArgs = false;
 	}
-	datFile = optarg;
+	defFile = optarg;
 	break;
       case 'm':
 	if (mapFile != NULL) {
@@ -164,11 +164,11 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   /////////////////////////////////////////////////////////////////////////////
   // Check for errors in command line options
 
-  if (datFile == NULL || mapFile == NULL || inVCFfile == NULL ||
+  if (defFile == NULL || mapFile == NULL || inVCFfile == NULL ||
 							    outPrefix == NULL) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
-    fprintf(stderr, "ERROR: dat, map, input VCF, and output prefix names required\n");
+    fprintf(stderr, "ERROR: def, map, input VCF, and output prefix names required\n");
     haveGoodArgs = false;
   }
 
@@ -188,7 +188,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "%s [ARGUMENTS]\n", programName);
   fprintf(out, "\n");
   fprintf(out, "REQUIRED ARGUMENTS:\n");
-  fprintf(out, "  -d <filename>\t\tdat file describing pedigree structures to simulate\n");
+  fprintf(out, "  -d <filename>\t\tdef file describing pedigree structures to simulate\n");
   fprintf(out, "  -m <filename>\t\tgenetic map file containing either a sex averaged map\n");
   fprintf(out, "\t\t\tor both male and female maps (format given in README.md)\n");
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");

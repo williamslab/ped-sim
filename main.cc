@@ -69,7 +69,7 @@ struct Person {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function decls
-void readDat(vector<SimDetails> &simDetails, char *datFile);
+void readDef(vector<SimDetails> &simDetails, char *defFile);
 void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 				int *&thisGenBranchParents,
 				int *prevGenSpouseNum = NULL,
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "Pedigree simulator!  v%s    (Released %s)\n\n",
 	    VERSION_NUMBER, RELEASE_DATE);
 
-    fprintf(outs[o], "  Dat file:\t\t%s\n", CmdLineOpts::datFile);
+    fprintf(outs[o], "  Def file:\t\t%s\n", CmdLineOpts::defFile);
     fprintf(outs[o], "  Map file:\t\t%s\n", CmdLineOpts::mapFile);
     fprintf(outs[o], "  Input VCF:\t\t%s\n", CmdLineOpts::inVCFfile);
     fprintf(outs[o], "  Output prefix:\t%s\n\n", CmdLineOpts::outPrefix);
@@ -181,16 +181,16 @@ int main(int argc, char **argv) {
   }
 
   vector<SimDetails> simDetails;
-  readDat(simDetails, CmdLineOpts::datFile);
+  readDef(simDetails, CmdLineOpts::defFile);
 
   vector< pair<char*, vector<PhysGeneticPos>* > > geneticMap;
   bool sexSpecificMaps;
   readMap(geneticMap, CmdLineOpts::mapFile, sexSpecificMaps);
 
   // The first index is the pedigree number corresponding to the description of
-  // the pedigree to be simulated in the dat file
+  // the pedigree to be simulated in the def file
   // The second index is the family: we replicate the same pedigree structure
-  // some number of times as specified in the dat file
+  // some number of times as specified in the def file
   // The third index is the generation number (0-based)
   // The fourth index is the branch of the pedigree
   // The fifth index is the individual number
@@ -238,18 +238,18 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-// Reads in the pedigree formats from the dat file, including the type of the
+// Reads in the pedigree formats from the def file, including the type of the
 // pedigree (full, half, or double) and the number of samples to produce in
 // every generation
-void readDat(vector<SimDetails> &simDetails, char *datFile) {
-  // open dat file:
-  FILE *in = fopen(datFile, "r");
+void readDef(vector<SimDetails> &simDetails, char *defFile) {
+  // open def file:
+  FILE *in = fopen(defFile, "r");
   if (!in) {
-    printf("ERROR: could not open dat file %s!\n", datFile);
+    printf("ERROR: could not open def file %s!\n", defFile);
     exit(1);
   }
 
-  // dat file contains information about how many samples to generate / store
+  // def file contains information about how many samples to generate / store
   // information for in some of the generations; we store this in an array
   // with length equal to the number of generations to be simulated
   int *curNumSampsToRetain = NULL;
@@ -307,14 +307,14 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       char *numGenStr = strtok_r(NULL, delim, &saveptr);
       if (name == NULL || numFamStr == NULL || numGenStr == NULL ||
 				      strtok_r(NULL, delim, &saveptr) != NULL) {
-	fprintf(stderr, "ERROR: line %d in dat: expect four fields for pedigree definition:\n",
+	fprintf(stderr, "ERROR: line %d in def: expect four fields for pedigree definition:\n",
 		line);
 	fprintf(stderr, "       def [name] [numFam] [numGen]\n");
 	exit(5);
       }
       int curNumFam = strtol(numFamStr, &endptr, 10);
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in dat: expected number of families to simulate as second token\n",
+	fprintf(stderr, "ERROR: line %d in def: expected number of families to simulate as second token\n",
 		line);
 	if (errno != 0)
 	  perror("strtol");
@@ -322,7 +322,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       }
       curNumGen = strtol(numGenStr, &endptr, 10);
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in dat: expected number of generations to simulate as third",
+	fprintf(stderr, "ERROR: line %d in def: expected number of generations to simulate as third",
 		line);
 	fprintf(stderr, "      token\n");
 	if (errno != 0)
@@ -334,7 +334,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       // names; probably fast enough
       for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
 	if (strcmp(it->name, name) == 0) {
-	  fprintf(stderr, "ERROR: line %d in dat: name of pedigree is same as previous pedigree\n",
+	  fprintf(stderr, "ERROR: line %d in def: name of pedigree is same as previous pedigree\n",
 		  line);
 	  exit(5);
 	}
@@ -369,7 +369,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
     // is there a current pedigree?
     if (curNumSampsToRetain == NULL) {
-      fprintf(stderr, "ERROR: line %d in dat: expect four fields for pedigree definition:\n",
+      fprintf(stderr, "ERROR: line %d in def: expect four fields for pedigree definition:\n",
 	      line);
       fprintf(stderr, "       def [name] [numFam] [numGen]\n");
       exit(5);
@@ -381,7 +381,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 
     int generation = strtol(genNumStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
-      fprintf(stderr, "ERROR: line %d in dat: expected generation number or \"def\" as first token\n",
+      fprintf(stderr, "ERROR: line %d in def: expected generation number or \"def\" as first token\n",
 	  line);
       if (errno != 0)
 	perror("strtol");
@@ -389,12 +389,12 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     }
 
     if (numSampsStr == NULL) {
-      printf("ERROR: improper line number %d in dat file: expected at least two fields\n",
+      printf("ERROR: improper line number %d in def file: expected at least two fields\n",
 	      line);
     }
     int numSamps = strtol(numSampsStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
-      fprintf(stderr, "ERROR: line %d in dat: expected number of samples to print as second token\n",
+      fprintf(stderr, "ERROR: line %d in def: expected number of samples to print as second token\n",
 	  line);
       if (errno != 0)
 	perror("strtol");
@@ -402,26 +402,26 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     }
 
     if (generation < 1 || generation > curNumGen) {
-      fprintf(stderr, "ERROR: line %d in dat: generation %d below 1 or above %d (max number\n",
+      fprintf(stderr, "ERROR: line %d in def: generation %d below 1 or above %d (max number\n",
 	      line, generation, curNumGen);
       fprintf(stderr, "       of generations)\n");
       exit(1);
     }
     if (numSamps < 0) {
-      fprintf(stderr, "ERROR: line %d in dat: in generation %d, number of samples to print\n",
+      fprintf(stderr, "ERROR: line %d in def: in generation %d, number of samples to print\n",
 	      line, generation);
       fprintf(stderr, "       below 0\n");
       exit(2);
     }
     if (generation == 1 && numSamps > 1) {
-      fprintf(stderr, "ERROR: line %d in dat: in generation 1, if founders are to be printed must\n",
+      fprintf(stderr, "ERROR: line %d in def: in generation 1, if founders are to be printed must\n",
 	      line);
       fprintf(stderr, "       list 1 as the number to be printed (others invalid)\n");
       exit(2);
     }
 
     if (generation <= lastReadGen) {
-      fprintf(stderr, "ERROR: line %d in dat: generation numbers must be in increasing order\n",
+      fprintf(stderr, "ERROR: line %d in def: generation numbers must be in increasing order\n",
 	      line);
       exit(7);
     }
@@ -429,7 +429,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     // if <curNumBranches> != -1, have prior definition for generation.
     // subtract 1 from <generation> because array is 0 based
     if (curNumBranches[generation - 1] != -1) {
-      fprintf(stderr, "ERROR: line %d in dat: multiple entries for generation %d\n",
+      fprintf(stderr, "ERROR: line %d in def: multiple entries for generation %d\n",
 	      line, generation);
       exit(2);
     }
@@ -459,7 +459,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
     if (branchStr != NULL) {
       thisGenNumBranches = strtol(branchStr, &endptr, 10);
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in dat: optional third token must be numerical value giving\n",
+	fprintf(stderr, "ERROR: line %d in def: optional third token must be numerical value giving\n",
 		line);
 	fprintf(stderr, "      number of branches\n");
 	if (errno != 0)
@@ -468,7 +468,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
       }
 
       if (thisGenNumBranches <= 0) {
-	fprintf(stderr, "ERROR: line %d in dat: in generation %d, branch number zero or below\n",
+	fprintf(stderr, "ERROR: line %d in def: in generation %d, branch number zero or below\n",
 		line, generation);
 	exit(2);
       }
@@ -500,7 +500,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
 			branchParentsAssigned, spouseDependencies, delim,
 			saveptr, endptr, line);
     else if (strtok_r(NULL, delim, &saveptr) != NULL) {
-      fprintf(stderr, "ERROR: line %d in dat: first generation cannot have parent specifications\n",
+      fprintf(stderr, "ERROR: line %d in def: first generation cannot have parent specifications\n",
 	      line);
       exit(8);
     }
@@ -518,7 +518,7 @@ void readDat(vector<SimDetails> &simDetails, char *datFile) {
   }
 
   if (simDetails.size() == 0) {
-    fprintf(stderr, "ERROR: dat file does not contain pedigree definitions;\n");
+    fprintf(stderr, "ERROR: def file does not contain pedigree definitions;\n");
     fprintf(stderr, "       nothing to simulate\n");
     exit(3);
   }
@@ -701,7 +701,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     // branches on the left
     for(i = 0; assignToken[i] != ':' && assignToken[i] != '\0'; i++);
     if (assignToken[i] != ':') {
-      fprintf(stderr, "ERROR: line %d in dat: improperly formatted parent assignment field %s\n",
+      fprintf(stderr, "ERROR: line %d in def: improperly formatted parent assignment field %s\n",
 	  line, assignToken);
       exit(8);
     }
@@ -724,19 +724,19 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 									  p++) {
       parIdx[p] = strtol(assignPar[p], &endptr, 10) - 1; // 0 indexed => -1
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in dat: unable to parse parent assignment for branches %s\n",
+	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
 	    line, assignBranches);
 	if (errno != 0)
 	  perror("strtol");
 	exit(2);
       }
       if (parIdx[p] < 0) {
-	fprintf(stderr, "ERROR: line %d in dat: parent assignments must be of positive branch numbers\n",
+	fprintf(stderr, "ERROR: line %d in def: parent assignments must be of positive branch numbers\n",
 	    line);
 	exit(8);
       }
       else if (parIdx[p] >= prevGenNumBranches) {
-	fprintf(stderr, "ERROR: line %d in dat: parent branch number %d is more than the number of\n",
+	fprintf(stderr, "ERROR: line %d in def: parent branch number %d is more than the number of\n",
 		line, parIdx[p]+1);
 	fprintf(stderr, "       branches (%d) in the previous generation\n",
 		prevGenNumBranches);
@@ -748,7 +748,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       assert(parIdx[1] == -1);
     }
     else if (parIdx[1] == -1) {
-      // Have not yet assigned the numerical id of parent 1. Because the dat
+      // Have not yet assigned the numerical id of parent 1. Because the def
       // file doesn't specify this, it is a founder, and one that hasn't been
       // assigned before. As such, we'll get a unique number associated with a
       // spouse of parIdx[0]. Negative values correspond to founders, so we
@@ -758,7 +758,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     }
     else {
       if (parIdx[0] == parIdx[1]) {
-	fprintf(stderr, "ERROR: line %d in dat: cannot have both parents be from same branch\n",
+	fprintf(stderr, "ERROR: line %d in def: cannot have both parents be from same branch\n",
 		line);
 	exit(8);
       }
@@ -781,7 +781,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       if (assignBranches[i] == '-') { // have a range; just passed over start:
 	assignBranches[i] = '\0';
 	if (startBranch != NULL) {
-	  fprintf(stderr, "ERROR: line %d in dat: improperly formatted branch range \"%s-%s-\"\n",
+	  fprintf(stderr, "ERROR: line %d in def: improperly formatted branch range \"%s-%s-\"\n",
 		  line, startBranch, assignBranches);
 	  exit(5);
 	}
@@ -796,7 +796,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 
 	int curBranch = strtol(assignBranches, &endptr, 10) - 1; // 0 indexed
 	if (errno != 0 || *endptr != '\0') {
-	  fprintf(stderr, "ERROR: line %d in dat: unable to parse branch %s to assign parent %s to\n",
+	  fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to assign parent %s to\n",
 		  line, assignBranches, fullAssignPar);
 	  if (errno != 0)
 	    perror("strtol");
@@ -807,7 +807,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	  int rangeEnd = curBranch;
 	  int rangeStart = strtol(startBranch, &endptr, 10) - 1; // 0 indexed
 	  if (errno != 0 || *endptr != '\0') {
-	    fprintf(stderr, "ERROR: line %d in dat: unable to parse branch %s to assign parent %s to\n",
+	    fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to assign parent %s to\n",
 		    line, startBranch, fullAssignPar);
 	    if (errno != 0)
 	      perror("strtol");
@@ -816,14 +816,14 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	  startBranch = NULL; // parsed: reset this variable
 
 	  if (rangeStart >= rangeEnd) {
-	    fprintf(stderr, "ERROR: line %d in dat: assigning parents to non-increasing branch range %d-%d\n",
+	    fprintf(stderr, "ERROR: line %d in def: assigning parents to non-increasing branch range %d-%d\n",
 		    line, rangeStart, rangeEnd);
 	    exit(8);
 	  }
 
 	  for(int branch = rangeStart; branch <= rangeEnd; branch++) {
 	    if (branchParentsAssigned[branch]) {
-	      fprintf(stderr, "ERROR: line %d in dat: parents of branch number %d assigned multiple times\n",
+	      fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
 		      line, branch+1);
 	      exit(8);
 	    }
@@ -834,7 +834,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	}
 	else {
 	  if (branchParentsAssigned[curBranch]) {
-	    fprintf(stderr, "ERROR: line %d in dat: parents of branch number %d assigned multiple times\n",
+	    fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
 		    line, curBranch+1);
 	    exit(8);
 	  }
@@ -848,7 +848,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     }
 
     if (startBranch != NULL) {
-      fprintf(stderr, "ERROR: line %d in dat: range of branches to assign parents does not terminate\n",
+      fprintf(stderr, "ERROR: line %d in def: range of branches to assign parents does not terminate\n",
 	      line);
       exit(8);
     }
@@ -970,7 +970,7 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
       // spouse sets from the same pair of sets
       if (prevGenSexConstraints[ parIdx[0] ] ==
 					  prevGenSexConstraints[ parIdx[1] ]) {
-	fprintf(stderr, "ERROR: line %d in dat: assigning %d and %d as parents is impossible due to\n",
+	fprintf(stderr, "ERROR: line %d in def: assigning %d and %d as parents is impossible due to\n",
 	    line, parIdx[0]+1, parIdx[1]+1);
 	fprintf(stderr, "       other parent assignments: they necessarily have same sex\n");
 	exit(3);
@@ -1006,7 +1006,7 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
 	// simultaneously
 	if ((*spouseDependencies[ setIdxes[0][0] ] &
 				*spouseDependencies[ setIdxes[0][1] ]).any()) {
-	  fprintf(stderr, "ERROR: line %d in dat: assigning %d and %d as parents is impossible due to\n",
+	  fprintf(stderr, "ERROR: line %d in def: assigning %d and %d as parents is impossible due to\n",
 		  line, parIdx[0]+1, parIdx[1]+1);
 	  fprintf(stderr, "       other parent assignments: they necessarily have same sex\n");
 	  exit(4);
@@ -1048,7 +1048,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     bool sexSpecificMaps) {
   // Note: throughout we use 0-based values for generations though the input
-  // dat file is 1-based
+  // def file is 1-based
 
   int totalFounderHaps = 0;
   // Stores the random assignments of sex for the parents in a given generation

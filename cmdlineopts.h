@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.91"
-#define RELEASE_DATE	"13 Oct 2017"
+#define VERSION_NUMBER	"0.92"
+#define RELEASE_DATE	"4 Nov 2017"
 
 class CmdLineOpts {
   public:
@@ -23,8 +23,8 @@ class CmdLineOpts {
     // public static fields : variables set by command-line options
     //////////////////////////////////////////////////////////////////
 
-    // Dat file
-    static char *datFile;
+    // Def file
+    static char *defFile;
 
     // Genetic map file
     static char *mapFile;
