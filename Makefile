@@ -1,4 +1,4 @@
-CPPSRCS= main.cc cmdlineopts.cc
+CPPSRCS= main.cc cmdlineopts.cc simStahl.cc
 CSRCS= memcpy.c
 OBJS= $(patsubst %.cc,%.o,$(CPPSRCS)) $(patsubst %.c,%.o,$(CSRCS))
 EXEC= ped-sim

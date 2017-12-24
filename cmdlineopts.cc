@@ -14,6 +14,7 @@
 // define/initialize static members
 char  *CmdLineOpts::defFile = NULL;
 char  *CmdLineOpts::mapFile = NULL;
+char  *CmdLineOpts::interfereFile = NULL;
 char  *CmdLineOpts::inVCFfile = 0;
 char  *CmdLineOpts::outPrefix = NULL;
 bool   CmdLineOpts::autoSeed = true;
@@ -28,6 +29,7 @@ int    CmdLineOpts::retainExtra = 0;
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   enum {
     RAND_SEED = CHAR_MAX + 1,
+    INTERFERENCE,
     RETAIN_EXTRA,
     ERR_RATE,
     ERR_HOM_RATE,
@@ -37,6 +39,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   static struct option const longopts[] =
   {
     {"seed", required_argument, NULL, RAND_SEED},
+    {"intf", required_argument, NULL, INTERFERENCE},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
     {"retain_extra", required_argument, NULL, RETAIN_EXTRA},
     {"err_rate", required_argument, NULL, ERR_RATE},
@@ -100,6 +103,9 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	    perror("strtol");
 	  exit(2);
 	}
+	break;
+      case INTERFERENCE:
+	interfereFile = optarg;
 	break;
       case ERR_RATE:
 	genoErrRate = strtod(optarg, &endptr);
@@ -196,6 +202,8 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --intf <filename>\tshape and escape fraction values for interference model\n");
   fprintf(out, "\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
