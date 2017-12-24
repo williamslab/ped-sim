@@ -14,8 +14,8 @@
 #include <assert.h>
 #include <boost/dynamic_bitset.hpp>
 #include "cmdlineopts.h"
+#include "simStahl.h"
 
-// TODO! other test cases?
 // TODO! only use sexConstraints array when there are sex-specific maps?
 // TODO! make branchNumSpouses positive
 
@@ -55,6 +55,18 @@ struct PhysGeneticPos {
   int physPos; double mapPos[2];
 };
 
+// To store the nu and p parameters for the crossover interference model
+struct IntfParams {
+  IntfParams(double _nu[2], double _p[2], double _len[2]) {
+    for(int i = 0; i < 2; i++) {
+      nu[i] = _nu[i];
+      p[i] = _p[i];
+      len[i] = _len[i];
+    }
+  }
+  double nu[2], p[2], len[2];
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store necessary details about the source and length of each segment:
 //
@@ -87,6 +99,9 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
 			  int line);
 void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps);
+void readInterfere(vector<IntfParams> &intfParams, char *interfereFile,
+		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		   bool &sexSpecificMaps);
 int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      bool sexSpecificMaps);
@@ -186,6 +201,13 @@ int main(int argc, char **argv) {
   vector< pair<char*, vector<PhysGeneticPos>* > > geneticMap;
   bool sexSpecificMaps;
   readMap(geneticMap, CmdLineOpts::mapFile, sexSpecificMaps);
+
+  vector<IntfParams> intfParams;
+  if (CmdLineOpts::interfereFile) {
+    printf("WARNING: interference doesn't yet work; will simulate using Poisson model\n\n");
+    readInterfere(intfParams, CmdLineOpts::interfereFile, geneticMap,
+		  sexSpecificMaps);
+  }
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the def file
@@ -551,10 +573,11 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     char *chrom, *physPosStr, *mapPos1Str, *mapPos2Str;
     char *saveptr;
 
+    if (buffer[0] == '#')
+      continue; // comment
+
     // get all the tokens:
     chrom = strtok_r(buffer, delim, &saveptr);
-    if (chrom[0] == '#')
-      continue; // comment
     physPosStr = strtok_r(NULL, delim, &saveptr);
     mapPos1Str = strtok_r(NULL, delim, &saveptr);
     mapPos2Str = strtok_r(NULL, delim, &saveptr);
@@ -602,6 +625,108 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     }
 
     curMap->emplace_back(physPos, mapPos1, mapPos2);
+  }
+
+  free(buffer);
+  fclose(in);
+}
+
+// Reads in interference parameters nu and p for males and females from
+// <interfereFile> and stores them in <intfParams>.
+void readInterfere(vector<IntfParams> &intfParams, char *interfereFile,
+		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		   bool &sexSpecificMaps) {
+  if (!sexSpecificMaps) {
+    // TODO: document this
+    fprintf(stderr, "ERROR: Must use sex specific genetic maps in order to simulate with interference\n");
+    exit(6);
+  }
+
+  size_t bytesRead = 1024;
+  char *buffer = (char *) malloc(bytesRead + 1);
+  const char *delim = " \t\n";
+
+  FILE *in = fopen(interfereFile, "r");
+  if (!in) {
+    printf("ERROR: could not open interference file %s!\n", interfereFile);
+    exit(1);
+  }
+
+  // Which chromosome index (into <geneticMap>) are we on? This allows us to
+  // ensure the names of the chromosomes listed in the interference file match
+  // those in <geneticMap>
+  // TODO: document that the chromosome names must match the genetic map and
+  // must be in the same order
+  unsigned int chrIdx = 0;
+  while (getline(&buffer, &bytesRead, in) >= 0) {
+    char *chrom, *nuStr[2], *pStr[2];
+    char *saveptr, *endptr;
+    double nu[2], p[2];
+
+    if (buffer[0] == '#')
+      continue; // comment
+
+    // get chromosome tokens:
+    chrom = strtok_r(buffer, delim, &saveptr);
+
+    if (chrIdx >= geneticMap.size()) {
+      fprintf(stderr, "ERROR: read chrom %s from interference file, but last genetic map chromosome\n",
+	      chrom);
+      fprintf(stderr, "       is %s\n", geneticMap[chrIdx-1].first);
+      exit(5);
+    }
+
+    // read remaining tokens:
+    for(int i = 0; i < 2; i++) {
+      nuStr[i] = strtok_r(NULL, delim, &saveptr);
+      pStr[i] = strtok_r(NULL, delim, &saveptr);
+
+      nu[i] = strtod(nuStr[i], &endptr);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: chrom %s, could not parse %s interference nu parameter\n",
+		chrom, (i == 0) ? "male" : "female");
+	if (errno != 0)
+	  perror("strtod");
+	exit(5);
+      }
+      p[i] = strtod(pStr[i], &endptr);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: chrom %s, could not parse %s interference p parameter\n",
+		chrom, (i == 0) ? "male" : "female");
+	if (errno != 0)
+	  perror("strtod");
+	exit(5);
+      }
+    }
+
+    char *tok;
+    if ((tok = strtok_r(NULL, delim, &saveptr)) != NULL) {
+      fprintf(stderr, "ERROR: read extra token %s in interference file (chrom %s)\n",
+	      tok, chrom);
+      exit(5);
+    }
+
+    if (strcmp(chrom, geneticMap[chrIdx].first) != 0) {
+      fprintf(stderr, "ERROR: order of interference chromosomes different from genetic map:\n");
+      fprintf(stderr, "       expected chromosome %s in interference file, read %s\n",
+	      geneticMap[chrIdx].first, chrom);
+      exit(10);
+    }
+
+    // Get the genetic lengths of the male and female maps for this chromosome
+    // This is the last element in the genetic maps for the corresponding
+    // chromosome:
+    double len[2];
+    for(int i = 0; i < 2; i++)
+      len[i] = geneticMap[chrIdx].second->back().mapPos[i];
+    intfParams.emplace_back(nu, p, len);
+    chrIdx++;
+  }
+
+  if (chrIdx != geneticMap.size()) {
+    fprintf(stderr, "ERROR: read %u chromosomes from interference file, but genetic map has %lu\n",
+	    chrIdx, geneticMap.size());
+    exit(5);
   }
 
   free(buffer);

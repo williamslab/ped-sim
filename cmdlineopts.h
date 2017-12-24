@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.92"
-#define RELEASE_DATE	"4 Nov 2017"
+#define VERSION_NUMBER	"0.92.5"
+#define RELEASE_DATE	"23 Dec 2017"
 
 class CmdLineOpts {
   public:
@@ -28,6 +28,9 @@ class CmdLineOpts {
 
     // Genetic map file
     static char *mapFile;
+
+    // Interference parameters file
+    static char *interfereFile;
 
     // Input VCF file
     static char *inVCFfile;
