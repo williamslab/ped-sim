@@ -14,7 +14,7 @@
 #include <assert.h>
 #include <boost/dynamic_bitset.hpp>
 #include "cmdlineopts.h"
-#include "simStahl.h"
+#include "cointerfere.h"
 
 // TODO! only use sexConstraints array when there are sex-specific maps?
 // TODO! make branchNumSpouses positive
@@ -55,18 +55,6 @@ struct PhysGeneticPos {
   int physPos; double mapPos[2];
 };
 
-// To store the nu and p parameters for the crossover interference model
-struct IntfParams {
-  IntfParams(double _nu[2], double _p[2], double _len[2]) {
-    for(int i = 0; i < 2; i++) {
-      nu[i] = _nu[i];
-      p[i] = _p[i];
-      len[i] = _len[i];
-    }
-  }
-  double nu[2], p[2], len[2];
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store necessary details about the source and length of each segment:
 //
@@ -99,17 +87,18 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
 			  int line);
 void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps);
-void readInterfere(vector<IntfParams> &intfParams, char *interfereFile,
+void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 		   bool &sexSpecificMaps);
 int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      bool sexSpecificMaps);
+	      bool sexSpecificMaps, vector<COInterfere> &coIntf);
 void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 		     int **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
-		       vector<PhysGeneticPos> *curMap, unsigned int chrIdx);
+		       vector<PhysGeneticPos> *curMap,
+		       vector<COInterfere> &coIntf, unsigned int chrIdx);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
@@ -124,7 +113,7 @@ void pop_front(vector<T> &vec);
 
 mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
-exponential_distribution<double> crossoverDist(1.0 / 100); // in cM units
+exponential_distribution<double> crossoverDist(1.0);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -202,12 +191,35 @@ int main(int argc, char **argv) {
   bool sexSpecificMaps;
   readMap(geneticMap, CmdLineOpts::mapFile, sexSpecificMaps);
 
-  vector<IntfParams> intfParams;
+  vector<COInterfere> coIntf;
   if (CmdLineOpts::interfereFile) {
-    printf("WARNING: interference doesn't yet work; will simulate using Poisson model\n\n");
-    readInterfere(intfParams, CmdLineOpts::interfereFile, geneticMap,
+    readInterfere(coIntf, CmdLineOpts::interfereFile, geneticMap,
 		  sexSpecificMaps);
   }
+//  FILE *out = fopen("foo.txt", "w");
+//  if (!out) {
+//    perror("fopen");
+//    exit(2);
+//  }
+//
+//  vector<double> locations;
+//  int chrIdx = 0;
+//  int sex = 1;
+//  double chrLength = geneticMap[chrIdx].second->back().mapPos[sex];
+//  printf("length = %lf\n", chrLength);
+//  for(int i = 0; i < 1000; i++) {
+//    IntfParams &curIntf = intfParams[chrIdx];
+//    simStahl(locations, curIntf.nu[sex], curIntf.p[sex], chrLength / 100,
+//	     randomGen);
+//    for(unsigned int j = 1; j < locations.size(); j++) {
+//      fprintf(out, "%lg\n", locations[j] - locations[j-1]);
+//    }
+//    locations.clear();
+//  }
+//
+//  fclose(out);
+//  exit(0);
+
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the def file
@@ -223,7 +235,7 @@ int main(int argc, char **argv) {
     fflush(outs[o]);
   }
   int totalFounderHaps = simulate(simDetails, theSamples, geneticMap,
-				  sexSpecificMaps);
+				  sexSpecificMaps, coIntf);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
@@ -633,7 +645,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 
 // Reads in interference parameters nu and p for males and females from
 // <interfereFile> and stores them in <intfParams>.
-void readInterfere(vector<IntfParams> &intfParams, char *interfereFile,
+void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 		   bool &sexSpecificMaps) {
   if (!sexSpecificMaps) {
@@ -718,8 +730,8 @@ void readInterfere(vector<IntfParams> &intfParams, char *interfereFile,
     // chromosome:
     double len[2];
     for(int i = 0; i < 2; i++)
-      len[i] = geneticMap[chrIdx].second->back().mapPos[i];
-    intfParams.emplace_back(nu, p, len);
+      len[i] = geneticMap[chrIdx].second->back().mapPos[i] / 100; // in Morgans
+    coIntf.emplace_back(nu, p, len);
     chrIdx++;
   }
 
@@ -1171,7 +1183,7 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
 // simulated samples.
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	     bool sexSpecificMaps) {
+	     bool sexSpecificMaps, vector<COInterfere> &coIntf) {
   // Note: throughout we use 0-based values for generations though the input
   // def file is 1-based
 
@@ -1351,7 +1363,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 		curGenSamps[branch][ind].haps[hapIdx].emplace_back();
 		generateHaplotype(curGenSamps[branch][ind].haps[hapIdx].back(),
-				  theParent, curMap, chrIdx);
+				  theParent, curMap, coIntf, chrIdx);
 	      } // <parIdx> (simulate each transmitted haplotype)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
@@ -1410,7 +1422,8 @@ void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 // simulated and may contain either one sex-averaged map or a male and female
 // map.
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
-		       vector<PhysGeneticPos> *curMap, unsigned int chrIdx) {
+		       vector<PhysGeneticPos> *curMap,
+		       vector<COInterfere> &coIntf, unsigned int chrIdx) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
   unsigned int curSegIdx[2] = { 0, 0 };
@@ -1419,23 +1432,45 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
   // Pick haplotype for the beginning of the transmitted one:
   int curHap = coinFlip(randomGen);
-  // centiMorgan position of next crossover -- exponentially random distance
-  // from first physical position in the map
-  double cMPosNextCO = curMap->front().mapPos[mapIdx] +
-						      crossoverDist(randomGen);
+
+  double firstcMPos = curMap->front().mapPos[mapIdx];
+  double lastcMPos = curMap->back().mapPos[mapIdx];
+  // Get the genetic length of this chromosome (for the appropriate sex).
+  // This is the last element in the genetic maps for the corresponding
+  // chromosome:
+  // In centiMorgans:
+  double chrLength = lastcMPos - firstcMPos;
+  // Locations of the crossovers
+  vector<double> coLocations; // in Morgans
+
+  if (CmdLineOpts::interfereFile) {
+    coIntf[chrIdx].simStahl(coLocations, parent.sex, randomGen);
+  }
+  else {
+    double lastPos = 0.0; // position of last crossover
+    while (true) { // simulate until crossover is past chromosome end
+      double curPos = lastPos + crossoverDist(randomGen);
+      if (curPos >= chrLength / 100)
+	break;
+      coLocations.push_back(curPos);
+      lastPos = curPos;
+    }
+  }
+
   // initially assume we'll recombine between first and positions with map info
   int switchIdx = 1;
 
-  int mapSize = curMap->size();
-  double lastcMPos = curMap->back().mapPos[mapIdx];
+  int mapNumPos = curMap->size();
+  for(auto it = coLocations.begin(); it != coLocations.end(); it++) {
+    // Multiply by 100 to get cM:
+    double cMPosNextCO = firstcMPos + (*it * 100);
 
-  while (cMPosNextCO < lastcMPos) {
     // TODO: slow linear search for switching index, but probably fast enough
-    for( ; switchIdx < mapSize; switchIdx++) {
+    for( ; switchIdx < mapNumPos; switchIdx++) {
       if ((*curMap)[switchIdx].mapPos[mapIdx] > cMPosNextCO)
 	break;
     }
-    if (switchIdx == mapSize)
+    if (switchIdx == mapNumPos)
       break; // let code below this while loop insert the final segments
 
     // segment ends between map indexes 1 less than the current <switchIdx>, so:
@@ -1479,18 +1514,6 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 	break;
     }
     assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
-
-    cMPosNextCO += crossoverDist(randomGen);
-
-    // TODO: implement? document if so
-    // find location of next crossover; we use this loop to ensure that the next
-    // <switchPos> value is strictly greater than the current one:
-    // (Presumably this will get triggered next to never, but just in case. Note
-    // that this changes the distribution of the crossover locations, but since
-    // there's CO interference in real data, this seems fine.)
-//    do {
-//      cMPosNextCO += crossoverDist(randomGen);
-//    } while (cMPosNextCO < curMap[switchIdx].mapPos[mapIdx]);
   }
 
   // copy through to the end of the chromosome:
