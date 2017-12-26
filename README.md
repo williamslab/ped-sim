@@ -263,7 +263,12 @@ Map file
 --------
 
 The genetic map file contains three columns for a sex-averaged map or four
-columns if using male and female maps. The format is:
+columns if using male and female maps. **When using only this genetic map, the
+simulator using a Poisson model of recombination which does not account for
+crossover interference; see the `--intf` option for simulating with an
+interference model.**
+
+The format of the genetic map file is:
 
     [chromosome] [physical_position] [map_position0] <map_position1>
 
@@ -422,6 +427,29 @@ Other optional arguments
 The `--seed <#>` option enables specification of the random seed to be used.
 Without this option, the simulator generates a random seed using the current
 time (including microseconds).
+
+### Incorporating crossover interference: `--intf <file>`
+
+The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
+model of recombination. This model requires specification of `nu` and `p`
+parameters. The `interference` subdirectory in the repository contains a file
+`nu_p_campbell.tsv` with estimates of these parameters for the human autosomes
+from [Campbell et al. 2015](https://www.nature.com/articles/ncomms7260).
+
+As with the VCF, the interference file must list chromosomes in the same order
+as the genetic map, and the chromosome names must be identical to the genetic
+map. The --intf file currently requires information for both sexes in both the
+interference file and the genetic map; ped-sim will print an error if the
+genetic map only has one set of map positions.
+
+The format of the interference file is:
+
+    [chromosome] [nu_0] [p_0] [nu_1] [p_1]
+
+The `[nu_0]` and `[p_0]` parameters correspond to the first genetic map given
+(see Map file section above), which is assumed to be male, and the `[nu_1]`
+and `[p_1]` parameters correspond to the second genetic map, which is assumed
+to be female.
 
 ### Genotyping error rate: `--err_rate <#>`
 

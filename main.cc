@@ -598,8 +598,6 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
       sexSpecificMaps = true;
 
     // need a new entry in <geneticMap> for a new chrom?
-    // TODO: document that maps must be in order in terms of chroms and
-    // physical position
     if (curChr == NULL || strcmp(chrom, curChr) != 0) {
       curChr = (char *) malloc(strlen(chrom) + 1);
       strcpy(curChr, chrom);
@@ -649,7 +647,6 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 		   bool &sexSpecificMaps) {
   if (!sexSpecificMaps) {
-    // TODO: document this
     fprintf(stderr, "ERROR: Must use sex specific genetic maps in order to simulate with interference\n");
     exit(6);
   }
@@ -667,8 +664,6 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
   // Which chromosome index (into <geneticMap>) are we on? This allows us to
   // ensure the names of the chromosomes listed in the interference file match
   // those in <geneticMap>
-  // TODO: document that the chromosome names must match the genetic map and
-  // must be in the same order
   unsigned int chrIdx = 0;
   while (getline(&buffer, &bytesRead, in) >= 0) {
     char *chrom, *nuStr[2], *pStr[2];
