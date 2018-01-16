@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
   }
 
   for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "Initially scanning VCF file... ");
+    fprintf(outs[o], "Generating output VCF... ");
     fflush(outs[o]);
   }
   sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);

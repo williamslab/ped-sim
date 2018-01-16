@@ -309,6 +309,11 @@ from the input VCF file. This VCF must contain phased data for all individuals,
 with no missing data for any site. As most phasers automatically impute missing
 data, the latter requirement should be easily met.
 
+If your aim is to simulate only recombination break points and not genotype
+data, creating an empty file and supplying this as the input VCF file suffices.
+Ped-sim will perform the simulation, generate a BP file, and then generate an
+empty output VCF since the input contains no markers.
+
 ------------------------------------------------------
 
 Output VCF file
