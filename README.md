@@ -43,8 +43,8 @@ The first line of a pedigree specification contains four columns:
 
 `[name]` gives the name of the pedigree, which must be unique for each pedigree
 structure in a given simulation run (i.e., a given def file). The simulator
-uses this to generate the simulated individuals' sample ids (details in the
-"Sample ids for simulated individuals" section below).
+uses this to generate the simulated individuals' sample ids (details in
+[Sample ids for simulated individuals](#samp-ids)).
 
 `[#copies]` gives the number of replicate simulations of the given pedigree
 structure to produce. While the replicates all have the same structure, they
@@ -259,7 +259,7 @@ two double cousin individuals from the last generation are printed.
 
 ------------------------------------------------------
 
-Map file
+Map file <a name="map-file"></a>
 --------
 
 The genetic map file contains three columns for a sex-averaged map or four
@@ -390,7 +390,7 @@ same simulation results.
 
 ------------------------------------------------------
 
-Sample ids for simulated individuals
+Sample ids for simulated individuals <a name="samp-ids"></a>
 ------------------------------------
 
 The simulated individuals' sample ids have the format
@@ -452,7 +452,7 @@ The format of the interference file is:
     [chromosome] [nu_0] [p_0] [nu_1] [p_1]
 
 The `[nu_0]` and `[p_0]` parameters correspond to the first genetic map given
-(see Map file section above), which is assumed to be male, and the `[nu_1]`
+(see [Map file](#map-file)), which is assumed to be male, and the `[nu_1]`
 and `[p_1]` parameters correspond to the second genetic map, which is assumed
 to be female.
 
@@ -508,3 +508,25 @@ unused samples exist, the simulator prints all the available samples.  When the
 requested number to print is less than the number available, the simulator
 randomly selects the samples to print from among all that were not used as
 founders.
+
+------------------------------------------------------
+
+Extraneous tools
+================
+
+Plotting pedigree structures: `plot-ped.R`
+------------------------------------------
+
+The `plot-ped.R` script can be used to plot the pedigree structures produced by
+`ped-sim` (or indeed for any PLINK format fam file). It works by running
+
+    ./plot-ped.R [base name]
+
+and will plot all pedigree structures given in the `[base name].fam` file. The
+output files are named `[base name]-[family id].pdf`, with a file for each
+family id (first column) in the fam file.
+
+Be mindful of the number of files this will produce: it generates a pdf for
+each *copy* of all the family structures in the file. It may be helpful to run
+ped-sim with the number of copies of each structure set to 1 when using this
+script.
