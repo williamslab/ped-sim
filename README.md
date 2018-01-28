@@ -518,15 +518,17 @@ Plotting pedigree structures: `plot-ped.R`
 ------------------------------------------
 
 The `plot-ped.R` script can be used to plot the pedigree structures produced by
-`ped-sim` (or indeed for any PLINK format fam file). It works by running
+`ped-sim` (or indeed for any PLINK format fam file). It requires the
+[kinship2](https://cran.r-project.org/web/packages/kinship2/index.html)
+R package and works by running
 
     ./plot-ped.R [base name]
 
-and will plot all pedigree structures given in the `[base name].fam` file. The
+This plots all pedigree structures given in the `[base name].fam` file. The
 output files are named `[base name]-[family id].pdf`, with a file for each
 family id (first column) in the fam file.
 
 Be mindful of the number of files this will produce: it generates a pdf for
 each *copy* of all the family structures in the file. It may be helpful to run
 ped-sim with the number of copies of each structure set to 1 when using this
-script.
+script to check your structures.
