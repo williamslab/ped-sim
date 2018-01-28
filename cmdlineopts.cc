@@ -204,6 +204,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
   fprintf(out, "\n");
   fprintf(out, "  --intf <filename>\tshape and escape fraction values for interference model\n");
+  fprintf(out, "\t\t\t(recommended)\n");
   fprintf(out, "\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
