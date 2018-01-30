@@ -3,7 +3,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) != 1) {
-  cat("Usage: ./plot-ped.R [base name]\n")
+  cat("Usage: ./plot-fam.R [base name]\n")
   quit()
 } else {
   cat("Generating pdfs with pedigree structures from ", args[1], ".fam...\n\n",
