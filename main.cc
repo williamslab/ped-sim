@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <assert.h>
 #include <boost/dynamic_bitset.hpp>
+#include <zlib.h>
 #include "cmdlineopts.h"
 #include "cointerfere.h"
 
@@ -103,7 +104,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
+	     int totalFounderHaps, char *inVCFfile, char *outVCFfile, bool isGZ,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     FILE *outs[2]);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
@@ -115,6 +116,19 @@ mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
 exponential_distribution<double> crossoverDist(1.0);
 
+struct fileOrGZ {
+  FILE *fp;
+  gzFile gfp;
+  bool isGZ;
+};
+
+bool fileOrGZ_open(fileOrGZ &fgz, const char *filename, const char *mode,
+		   bool isGZ);
+int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz);
+int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...);
+int fileOrGZ_close(fileOrGZ &fgz);
+
+
 ////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
@@ -123,7 +137,7 @@ int main(int argc, char **argv) {
     return -1;
 
   int outPrefixLen = strlen(CmdLineOpts::outPrefix);
-  char *outFile = new char[ outPrefixLen + 4 + 1 ]; // +4 for .vcf, + 1 for \0
+  char *outFile = new char[ outPrefixLen + 7 + 1 ]; //+7 for .vcf.gz, + 1 for \0
 
   // open the log file
   sprintf(outFile, "%s.log", CmdLineOpts::outPrefix);
@@ -253,9 +267,17 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "Generating output VCF... ");
     fflush(outs[o]);
   }
-  sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
+  int inVCFlen = strlen(CmdLineOpts::inVCFfile);
+  bool isGZ = false;
+  if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
+    isGZ = true;
+    sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
+  }
+  else {
+    sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
+  }
   makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
-	  /*outVCFfile=*/ outFile, geneticMap, outs);
+	  /*outVCFfile=*/ outFile, isGZ, geneticMap, outs);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
@@ -1589,25 +1611,113 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   fclose(out);
 }
 
+// open <filename> either using standard I/O or as a gzipped file if <isGZ>
+bool fileOrGZ_open(fileOrGZ &fgz, const char *filename, const char *mode,
+		   bool isGZ) {
+  fgz.isGZ = isGZ;
+  if (isGZ) { // gzipped
+    fgz.fp = NULL;
+    fgz.gfp = gzopen(filename, mode);
+    if (!fgz.gfp)
+      return false;
+    else
+      return true;
+  }
+  else { // standard
+    fgz.gfp = NULL;
+    fgz.fp = fopen(filename, mode);
+    if (!fgz.fp)
+      return false;
+    else
+      return true;
+  }
+}
+
+// NOTE: unlike getline() this assumes that *lineptr is non-NULL, and that
+// n > 0.
+int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz) {
+  if (fgz.isGZ) {
+    char *buf = *lineptr;
+    int n_read = 0;
+    int c;
+
+    while ((c = gzgetc(fgz.gfp)) != EOF) {
+      // About to have read one more, so n_read + 1 needs to be less than *n.
+      // Note that we use >= not > since we need one more space for '\0'
+      if (n_read + 1 >= (int) *n) {
+	const size_t GROW = 1024;
+	buf = (char *) realloc(*lineptr, *n + GROW);
+	if (buf == NULL) {
+	  fprintf(stderr, "ERROR: out of memory!\n");
+	  exit(1);
+	}
+	*n += GROW;
+	*lineptr = buf;
+      }
+      buf[n_read] = (char) c;
+      n_read++;
+      if (c == '\n')
+	break;
+    }
+
+    if (c == EOF && n_read == 0)
+      return -1;
+
+    buf[n_read] = '\0';
+
+    return n_read;
+  }
+  else {
+    return getline(lineptr, n, fgz.fp);
+  }
+}
+
+int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...) {
+  va_list arg;
+  int ret;
+  va_start(arg, format);
+  if (fgz.isGZ) {
+    ret = gzvprintf(fgz.gfp, format, arg);
+  }
+  else {
+    ret = vfprintf(fgz.fp, format, arg);
+  }
+  va_end(arg);
+  return ret;
+}
+
+int fileOrGZ_close(fileOrGZ &fgz) {
+  if (fgz.isGZ) {
+    return gzclose(fgz.gfp);
+  }
+  else {
+    return fclose(fgz.fp);
+  }
+}
+
 // Given the simulated break points for individuals in each pedigree/family
 // stored in <theSamples> and other necessary information, reads input VCF
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, char *inVCFfile, char *outVCFfile,
+	     int totalFounderHaps, char *inVCFfile, char *outVCFfile, bool isGZ,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     FILE *outs[2]) {
   // open input VCF file:
-  FILE *in = fopen(inVCFfile, "r");
-  if (!in) {
+  fileOrGZ in;
+  bool success = fileOrGZ_open(in, inVCFfile, "r", isGZ);
+  if (!success) {
     printf("\nERROR: could not open input VCF file %s!\n", inVCFfile);
+    perror("open");
     exit(1);
   }
 
   // open output VCF file:
-  FILE *out = fopen(outVCFfile, "w");
-  if (!out) {
+  fileOrGZ out;
+  success = fileOrGZ_open(out, outVCFfile, "w", isGZ);
+  if (!success) {
     printf("\nERROR: could not open output VCF file %s!\n", outVCFfile);
+    perror("open");
     exit(1);
   }
 
@@ -1648,10 +1758,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
 
-  while (getline(&buffer, &bytesRead, in) >= 0) { // read each line of input VCF
+  while (fileOrGZ_getline(&buffer, &bytesRead, in) >= 0) { // lines of input VCF
     if (buffer[0] == '#' && buffer[1] == '#') {
       // header line: print to output
-      fprintf(out, "%s", buffer);
+      fileOrGZ_printf(out, "%s", buffer);
       continue;
     }
 
@@ -1732,7 +1842,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       // Now print the header line indicating fields and sample ids for the
       // output VCF
-      fprintf(out, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
+      fileOrGZ_printf(out,
+		       "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
 
       // print sample ids:
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
@@ -1762,11 +1873,12 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  else                        // one spouse by default
 		    thisBranchNumSpouses = 1;
 		  if (ind < thisBranchNumSpouses)
-		    fprintf(out, "\t%s%d_g%d-b%d-s%d", pedName, fam+1, gen+1,
-			    branch+1, ind+1);
+		    fileOrGZ_printf(out, "\t%s%d_g%d-b%d-s%d", pedName, fam+1,
+				     gen+1, branch+1, ind+1);
 		  else
-		    fprintf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1, gen+1,
-			    branch+1, ind - thisBranchNumSpouses + 1);
+		    fileOrGZ_printf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1,
+				     gen+1, branch+1,
+				     ind - thisBranchNumSpouses + 1);
 		}
 	      }
       }
@@ -1774,10 +1886,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       // print the ids for the --retain_extra samples:
       for(unsigned int i = 0; i < numToRetain; i++) {
 	int sampIdx = extraSamples[i];
-	fprintf(out, "\t%s", sampleIds[ sampIdx ]);
+	fileOrGZ_printf(out, "\t%s", sampleIds[ sampIdx ]);
       }
 
-      fprintf(out, "\n");
+      fileOrGZ_printf(out, "\n");
       continue;
     }
 
@@ -1879,9 +1991,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     }
 
     // Print this line to the output file
-    fprintf(out, "%s\t%s", chrom, posStr);
+    fileOrGZ_printf(out, "%s\t%s", chrom, posStr);
     for(int i = 0; i < 7; i++)
-      fprintf(out, "\t%s", otherFields[i]);
+      fileOrGZ_printf(out, "\t%s", otherFields[i]);
 
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
       int numFam = simDetails[ped].numFam;
@@ -1906,7 +2018,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		// set to missing (according to the rate set by the user)?
 		if (setMissing( randomGen )) {
 		  for(int h = 0; h < 2; h++)
-		    fprintf(out, "%c.", betweenAlleles[h]);
+		    fileOrGZ_printf(out, "%c.", betweenAlleles[h]);
 		  continue; // done printing genotype data for this sample
 		}
 
@@ -1954,12 +2066,12 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  }
 
 		  for(int h = 0; h < 2; h++)
-		    fprintf(out, "%c%d", betweenAlleles[h], alleles[h]);
+		    fileOrGZ_printf(out, "%c%d", betweenAlleles[h],alleles[h]);
 		}
 		else { // no error: print alleles from original haplotypes
 		  for(int h = 0; h < 2; h++)
-		    fprintf(out, "%c%s", betweenAlleles[h],
-			    founderHaps[ curFounderHaps[h] ]);
+		    fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
+				     founderHaps[ curFounderHaps[h] ]);
 		}
 	      }
 	    }
@@ -1968,16 +2080,16 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     for(unsigned int i = 0; i < numToRetain; i++) {
       int sampIdx = extraSamples[i];
       for(int h = 0; h < 2; h++)
-	fprintf(out, "%c%s", betweenAlleles[h],
-		hapAlleles[ 2*sampIdx + h ]);
+	fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
+			 hapAlleles[ 2*sampIdx + h ]);
     }
 
-    fprintf(out, "\n");
+    fileOrGZ_printf(out, "\n");
   }
 
   free(buffer);
-  fclose(out);
-  fclose(in);
+  fileOrGZ_close(out);
+  fileOrGZ_close(in);
 }
 
 // print fam format file with the pedigree structure of all individuals included

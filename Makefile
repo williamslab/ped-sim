@@ -22,7 +22,7 @@ ifdef PROFILE       # to use run `make PROFILE=1
   CFLAGS += -pg
 endif
 
-LIBS = 
+LIBS = -lz
 
 # dependency variables / commands
 DEPDIR = .deps

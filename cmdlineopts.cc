@@ -198,7 +198,9 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  -m <filename>\t\tgenetic map file containing either a sex averaged map\n");
   fprintf(out, "\t\t\tor both male and female maps (format given in README.md)\n");
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
+  fprintf(out, "\t\t\tcan be gzipped (with .gz extension) or not\n");
   fprintf(out, "  -o <prefix>\t\toutput prefix (creates <prefix>.vcf, <prefix>.bp, etc.)\n");
+  fprintf(out, "\t\t\tif input VCF is gzipped, output is too\n");
   fprintf(out, "\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
