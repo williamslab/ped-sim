@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
@@ -1673,16 +1674,23 @@ int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz) {
 }
 
 int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...) {
-  va_list arg;
+  va_list args;
   int ret;
-  va_start(arg, format);
+  va_start(args, format);
   if (fgz.isGZ) {
-    ret = gzvprintf(fgz.gfp, format, arg);
+    char *buf;
+    ret = vasprintf(&buf, format, args);
+    if (ret < 0)
+      return ret;
+    size_t len = strlen(buf);
+    ret = gzwrite(fgz.gfp, buf, len);
+    free(buf);
+    return ret;
   }
   else {
-    ret = vfprintf(fgz.fp, format, arg);
+    ret = vfprintf(fgz.fp, format, args);
   }
-  va_end(arg);
+  va_end(args);
   return ret;
 }
 
