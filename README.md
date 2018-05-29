@@ -5,13 +5,14 @@ genetic maps and randomly assigns the sex of each parent when using such maps.
 
 Basic usage:
 
-    ./ped-sim -d <in.def> -m <map file> -i <in.vcf> -o <out_prefix>
+    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix>
 
-The simulator produces four output files: `[out_prefix].vcf`, `[out_prefix].bp`,
-`[out_prefix].fam`, and `[out_prefix].log`. Descriptions of each of these input
-and output files are below. Run `ped-sim` without arguments to see a full
-listing of options. This document describes all options with the non-required
-options described at the end.
+The simulator produces four output files: `[out_prefix].vcf` (or
+`[out_prefix].vcf.gz`), `[out_prefix].bp`, `[out_prefix].fam`, and
+`[out_prefix].log`. Descriptions of each of these input and output files are
+below. Run `ped-sim` without arguments to see a full listing of options. This
+document describes all options with the non-required options described at the
+end.
 
 <!--TODO: give example; want to make small VCF with HapMap samples for this-->
 
@@ -308,6 +309,9 @@ All founders in the simulated pedigrees are randomly sampled individuals
 from the input VCF file. This VCF must contain phased data for all individuals,
 with no missing data for any site. As most phasers automatically impute missing
 data, the latter requirement should be easily met.
+
+The input VCF file can be gzipped, and if it is, ped-sim prints the output VCF
+in gzipped format.
 
 If your aim is to simulate only recombination break points and not genotype
 data, creating an empty file and supplying this as the input VCF file suffices.
