@@ -500,6 +500,13 @@ By default the simulator produces a VCF that does not contain phase information.
 The `--keep_phase` option will instead generate a VCF that maintains the
 phase of all samples.
 
+### Listing input sample ids used as founders: `--founder_ids`
+
+Ped-sim assigns input samples as founders in the pedigrees it simulates. The
+`--founder_ids` option prints a file called `[out_prefix].ids` that contains
+two columns listing each founder sample id followed by the corresponding input
+sample id Ped-sim assigned to that founder.
+
 ### Retaining extra input samples: `--retain_extra <#>`
 
 The simulator uses samples from the input VCF as founder individuals, and will
