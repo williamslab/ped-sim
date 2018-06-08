@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <errno.h>
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
@@ -145,6 +146,7 @@ int main(int argc, char **argv) {
   FILE *log = fopen(outFile, "w");
   if (!log) {
     printf("ERROR: could not open log file %s!\n", outFile);
+    perror("open");
     exit(1);
   }
 
@@ -211,30 +213,6 @@ int main(int argc, char **argv) {
     readInterfere(coIntf, CmdLineOpts::interfereFile, geneticMap,
 		  sexSpecificMaps);
   }
-//  FILE *out = fopen("foo.txt", "w");
-//  if (!out) {
-//    perror("fopen");
-//    exit(2);
-//  }
-//
-//  vector<double> locations;
-//  int chrIdx = 0;
-//  int sex = 1;
-//  double chrLength = geneticMap[chrIdx].second->back().mapPos[sex];
-//  printf("length = %lf\n", chrLength);
-//  for(int i = 0; i < 1000; i++) {
-//    IntfParams &curIntf = intfParams[chrIdx];
-//    simStahl(locations, curIntf.nu[sex], curIntf.p[sex], chrLength / 100,
-//	     randomGen);
-//    for(unsigned int j = 1; j < locations.size(); j++) {
-//      fprintf(out, "%lg\n", locations[j] - locations[j-1]);
-//    }
-//    locations.clear();
-//  }
-//
-//  fclose(out);
-//  exit(0);
-
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the def file
@@ -294,6 +272,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   FILE *in = fopen(defFile, "r");
   if (!in) {
     printf("ERROR: could not open def file %s!\n", defFile);
+    perror("open");
     exit(1);
   }
 
@@ -588,6 +567,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
   FILE *in = fopen(mapFile, "r");
   if (!in) {
     printf("ERROR: could not open map file %s!\n", mapFile);
+    perror("open");
     exit(1);
   }
 
@@ -1540,6 +1520,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   FILE *out = fopen(bpFile, "w");
   if (!out) {
     printf("ERROR: could not open output file %s!\n", bpFile);
+    perror("open");
     exit(1);
   }
 
@@ -1848,6 +1829,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	idOut = fopen(outFileBuf, "w");
 	if (!idOut) {
 	  printf("ERROR: could not open found ids file %s!\n", outFileBuf);
+	  perror("open");
 	  exit(1);
 	}
       }
@@ -1986,6 +1968,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       continue; // no genetic map information for this position: skip
 
     // read/save the ID, REF, ALT, QUAL, FILTER, INFO, and FORMAT fields:
+    // TODO! ought to deal with non-trivial formats -- what if GT isn't first
+    //       field
     char *otherFields[7];
     for(int i = 0; i < 7; i++)
       otherFields[i] = strtok_r(NULL, tab, &saveptr);
@@ -2162,6 +2146,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
   FILE *out = fopen(famFile, "w");
   if (!out) {
     printf("ERROR: could not open output fam file %s!\n", famFile);
+    perror("open");
     exit(1);
   }
 
