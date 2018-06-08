@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.97"
-#define RELEASE_DATE	"28 May 2018"
+#define VERSION_NUMBER	"0.97.2"
+#define RELEASE_DATE	"8 June 2018"
 
 class CmdLineOpts {
   public:
@@ -62,6 +62,9 @@ class CmdLineOpts {
     // samples not used for simulations. Otherwise, will retain the indicated
     // number of samples
     static int retainExtra;
+
+    // Print the original ids of the founders?
+    static int printFounderIds;
 };
 
 #endif // CMDOPTIONS_H

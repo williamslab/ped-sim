@@ -105,7 +105,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, char *inVCFfile, char *outVCFfile, bool isGZ,
+	     int totalFounderHaps, char *inVCFfile, char *outFileBuf,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     FILE *outs[2]);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
@@ -268,17 +268,8 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "Generating output VCF... ");
     fflush(outs[o]);
   }
-  int inVCFlen = strlen(CmdLineOpts::inVCFfile);
-  bool isGZ = false;
-  if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
-    isGZ = true;
-    sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
-  }
-  else {
-    sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
-  }
   makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
-	  /*outVCFfile=*/ outFile, isGZ, geneticMap, outs);
+	  /*outVCFfile=*/ outFile, geneticMap, outs);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
@@ -1708,9 +1699,19 @@ int fileOrGZ_close(fileOrGZ &fgz) {
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, char *inVCFfile, char *outVCFfile, bool isGZ,
+	     int totalFounderHaps, char *inVCFfile, char *outFileBuf,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     FILE *outs[2]) {
+  int inVCFlen = strlen(inVCFfile);
+  bool isGZ = false;
+  if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
+    isGZ = true;
+    sprintf(outFileBuf, "%s.vcf.gz", CmdLineOpts::outPrefix);
+  }
+  else {
+    sprintf(outFileBuf, "%s.vcf", CmdLineOpts::outPrefix);
+  }
+
   // open input VCF file:
   fileOrGZ in;
   bool success = fileOrGZ_open(in, inVCFfile, "r", isGZ);
@@ -1722,9 +1723,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   // open output VCF file:
   fileOrGZ out;
-  success = fileOrGZ_open(out, outVCFfile, "w", isGZ);
+  success = fileOrGZ_open(out, outFileBuf, "w", isGZ);
   if (!success) {
-    printf("\nERROR: could not open output VCF file %s!\n", outVCFfile);
+    printf("\nERROR: could not open output VCF file %s!\n", outFileBuf);
     perror("open");
     exit(1);
   }
@@ -1763,6 +1764,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   int numInputSamples = 0;
   vector<int> shuffHaps; // For randomizing the assigned haplotypes
   vector<int> extraSamples; // Sample indexes to print for --retain_extra
+  // map from haplotype index / 2 to sample_index
+  int *founderSamples = new int[totalFounderHaps / 2];
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
 
@@ -1824,7 +1827,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       // Store ids for all extra samples -- those whose shuffled haplotype
       // assignment is after all that will be used:
       for(int i = 0; i < numInputSamples; i++) {
-	if (shuffHaps[i] >= totalFounderHaps)
+	if (shuffHaps[i] < totalFounderHaps)
+	  founderSamples[ shuffHaps[i] / 2 ] = i;
+	else
 	  extraSamples.push_back(i);
       }
       assert(extraSamples.size() == numExtraSamples);
@@ -1836,6 +1841,17 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	shuffle(extraSamples.begin(), extraSamples.end(), randomGen);
       }
 
+      // open output ids file (if needed):
+      FILE *idOut = NULL;
+      if (CmdLineOpts::printFounderIds) {
+	sprintf(outFileBuf, "%s.ids", CmdLineOpts::outPrefix);
+	idOut = fopen(outFileBuf, "w");
+	if (!idOut) {
+	  printf("ERROR: could not open found ids file %s!\n", outFileBuf);
+	  exit(1);
+	}
+      }
+
       for(int o = 0; o < 2; o++) {
 	fprintf(outs[o], "done.\n"); // initial scan of VCF file (see main())
 	fprintf(outs[o], "  Input contains %d samples, using %d as founders, and retaining %d\n",
@@ -1844,8 +1860,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	  fprintf(outs[o], "  Note: cannot retain all requested %d samples\n",
 		  CmdLineOpts::retainExtra);
 	}
-	fprintf(outs[o], "Generating VCF file... ");
-	fflush(outs[o]);
+	if (idOut) {
+	  fprintf(outs[o], "Generating founder ids file... ");
+	  fflush(outs[o]);
+	}
       }
 
       // Now print the header line indicating fields and sample ids for the
@@ -1866,7 +1884,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int gen = 0; gen < numGen; gen++)
 	    for(int branch = 0; branch < numBranches[gen]; branch++)
-	      if (numSampsToRetain[gen] > 0) {
+	      if (numSampsToRetain[gen] > 0 || idOut) { // need to print?
 		int numNonFounders, numFounders;
 		getPersonCounts(gen, numGen, branch, numSampsToRetain,
 				branchParents, branchNumSpouses, numFounders,
@@ -1880,13 +1898,38 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    thisBranchNumSpouses = 0;
 		  else                        // one spouse by default
 		    thisBranchNumSpouses = 1;
-		  if (ind < thisBranchNumSpouses)
-		    fileOrGZ_printf(out, "\t%s%d_g%d-b%d-s%d", pedName, fam+1,
+		  bool curIsFounder = false;
+		  if (ind < thisBranchNumSpouses) {
+		    curIsFounder = true;
+		    if (numSampsToRetain[gen] > 0)
+		      fileOrGZ_printf(out, "\t%s%d_g%d-b%d-s%d", pedName, fam+1,
+					   gen+1, branch+1, ind+1);
+		    if (idOut) // print Ped-sim id to founder id file:
+		      fprintf(idOut, "%s%d_g%d-b%d-s%d", pedName, fam+1,
 				     gen+1, branch+1, ind+1);
-		  else
-		    fileOrGZ_printf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1,
-				     gen+1, branch+1,
-				     ind - thisBranchNumSpouses + 1);
+		  }
+		  else {
+		    int indNum = ind - thisBranchNumSpouses;
+		    if (numSampsToRetain[gen] > 0)
+		      fileOrGZ_printf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1,
+					   gen+1, branch+1, indNum + 1);
+		    if (idOut &&
+			(gen == 0 || branchParents[gen][branch*2] < 0)) {
+		      assert(indNum == 0);
+		      curIsFounder = true;
+		      fprintf(idOut, "%s%d_g%d-b%d-i%d", pedName, fam+1,
+				     gen+1, branch+1, indNum + 1);
+		    }
+		  }
+
+		  if (idOut && curIsFounder) {
+		    int hapNum = theSamples[ped][fam][gen][branch][ind].
+				      haps[0][/*chrIdx=*/0].front().foundHapNum;
+		    assert(hapNum % 2 == 0);
+		    int founderIdx = founderSamples[ hapNum / 2 ];
+		    fprintf(idOut, "\t%s\n", sampleIds[ founderIdx ]);
+		  }
+
 		}
 	      }
       }
@@ -1898,6 +1941,17 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       }
 
       fileOrGZ_printf(out, "\n");
+
+      for(int o = 0; o < 2; o++) {
+	if (idOut)
+	  fprintf(outs[o], "done.\n");
+	fprintf(outs[o], "Generating VCF file... ");
+	fflush(outs[o]);
+      }
+
+      if (idOut)
+	fclose(idOut);
+
       continue;
     }
 

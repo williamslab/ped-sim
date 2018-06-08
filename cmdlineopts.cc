@@ -24,6 +24,7 @@ double CmdLineOpts::homErrRate = .1;
 double CmdLineOpts::missRate = 1e-3;
 int    CmdLineOpts::keepPhase = 0;
 int    CmdLineOpts::retainExtra = 0;
+int    CmdLineOpts::printFounderIds = 0;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
@@ -41,6 +42,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"seed", required_argument, NULL, RAND_SEED},
     {"intf", required_argument, NULL, INTERFERENCE},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
+    {"founder_ids", no_argument, &CmdLineOpts::printFounderIds, 1},
     {"retain_extra", required_argument, NULL, RETAIN_EXTRA},
     {"err_rate", required_argument, NULL, ERR_RATE},
     {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
@@ -214,6 +216,8 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --miss_rate <#>\tmissingness rate (default 1e-3; 0 disables)\n");
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --founder_ids\t\tprint ids of founders to output file <prefix>.ids\n");
   fprintf(out, "\n");
   fprintf(out, "  --retain_extra <#>\toutput samples not used as founders to VCF file\n");
   fprintf(out, "\t\t\tnumeric argument indicates number to retain\n");
