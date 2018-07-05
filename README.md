@@ -1,3 +1,29 @@
+Table of Contents
+-----------------
+   * [Pedigree Simulator](#pedigree-simulator)
+      * [Compiling](#compiling)
+      * [Def file](#def-file)
+      * [Map file](#map-file)
+      * [Input VCF file](#input-vcf-file)
+      * [Output VCF file](#output-vcf-file)
+      * [Output BP file](#output-bp-file)
+      * [Output fam file](#output-fam-file)
+      * [Output log file](#output-log-file)
+      * [Sample ids for simulated individuals](#samp-ids)
+      * [Citing Ped-sim](#citing-ped-sim)
+      * [Extra notes](#extra-notes)
+      * [Other optional arguments](#other-optional-arguments)
+         * [Specifying random seed](#specifying-random-seed---seed-)
+         * [Incorporating crossover interference](#incorporating-crossover-interference---intf-file)
+         * [Genotyping error rate](#genotyping-error-rate---err_rate-)
+         * [Rate of opposite homozygote errors](#rate-of-opposite-homozygote-errors---err_hom_rate-)
+         * [Missingness rate](#missingness-rate---miss_rate-)
+         * [Maintaining phase in output](#maintaining-phase-in-output---keep_phase)
+         * [Listing input sample ids used as founders](#listing-input-sample-ids-used-as-founders---founder_ids)
+         * [Retaining extra input samples](#retaining-extra-input-samples---retain_extra-)
+   * [Extraneous tools](#extraneous-tools)
+      * [Plotting pedigree structures: plot-fam.R](#plotting-pedigree-structures-plot-famr)
+
 Pedigree Simulator
 ==================
 Program to simulate pedigree structures. The method can use sex-specific
@@ -415,6 +441,13 @@ prefix id but end in `s[#]`, with the number ranging from 1 to the total number
 of spouses of that individual. The number of spouses will only be 1 unless
 parent specifications appear in the def file that indicate more founder spouses
 should be used.
+
+------------------------------------------------------
+
+Citing Ped-sim
+--------------
+
+If you use Ped-sim in your work, please cite [Ramstetter et al. (2018)](https://www.sciencedirect.com/science/article/pii/S0002929718301691).
 
 ------------------------------------------------------
 
