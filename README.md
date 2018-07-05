@@ -24,6 +24,8 @@ Table of Contents
    * [Extraneous tools](#extraneous-tools)
       * [Plotting pedigree structures: plot-fam.R](#plotting-pedigree-structures-plot-famr)
 
+------------------------------------------------------
+
 Pedigree Simulator
 ==================
 Program to simulate pedigree structures. The method can use sex-specific
