@@ -10,8 +10,8 @@ Table of Contents
       * [Output fam file](#output-fam-file)
       * [Output log file](#output-log-file)
       * [Sample ids for simulated individuals](#samp-ids)
+      * [Extra notes: sex-specific maps](#extra-notes-sex-specific-maps)
       * [Citing Ped-sim](#citing-ped-sim)
-      * [Extra notes](#extra-notes)
       * [Other optional arguments](#other-optional-arguments)
          * [Specifying random seed](#specifying-random-seed---seed-)
          * [Incorporating crossover interference](#incorporating-crossover-interference---intf-file)
@@ -446,20 +446,20 @@ should be used.
 
 ------------------------------------------------------
 
-Citing Ped-sim
---------------
-
-If you use Ped-sim in your work, please cite [Ramstetter et al. (2018)](https://www.sciencedirect.com/science/article/pii/S0002929718301691).
-
-------------------------------------------------------
-
-Extra notes
------------
+Extra notes: sex-specific maps
+------------------------------
 
 When simulating with sex-specific maps, it is necessary to include data for all
 chromosomes in one run. This is because sex is assigned randomly, but only once
 per run. Thus, to maintain consistency of the sex of each individual in a
 given pedigree, all chromosomes need to be simulated in the same run.
+
+------------------------------------------------------
+
+Citing Ped-sim
+--------------
+
+If you use Ped-sim in your work, please cite [Ramstetter et al. (2018)](https://www.sciencedirect.com/science/article/pii/S0002929718301691).
 
 ------------------------------------------------------
 
