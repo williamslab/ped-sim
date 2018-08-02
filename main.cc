@@ -176,6 +176,10 @@ int main(int argc, char **argv) {
 
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
 
+    fprintf(outs[o], "  Interference file:\t%s\n\n",
+	    CmdLineOpts::interfereFile == NULL ? "[none]" :
+						    CmdLineOpts::interfereFile);
+
     fprintf(outs[o], "  Genotype error rate:\t%.1le\n",
 	    CmdLineOpts::genoErrRate);
     fprintf(outs[o], "  Opposite homozygous error rate:\t%.2lf\n",
