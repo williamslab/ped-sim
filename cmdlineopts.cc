@@ -37,10 +37,16 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     MISS_RATE,
   };
 
+  // This is a local variable because whenever <interfereFile> is NULL, the
+  // program uses a Poisson model. Variable needed to determine which model
+  // is selected (and ensure that simulation is not done using both models).
+  int poisson = 0;
+
   static struct option const longopts[] =
   {
-    {"seed", required_argument, NULL, RAND_SEED},
     {"intf", required_argument, NULL, INTERFERENCE},
+    {"pois", no_argument, &poisson, 1},
+    {"seed", required_argument, NULL, RAND_SEED},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
     {"founder_ids", no_argument, &CmdLineOpts::printFounderIds, 1},
     {"retain_extra", required_argument, NULL, RETAIN_EXTRA},
@@ -179,6 +185,18 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     fprintf(stderr, "ERROR: def, map, input VCF, and output prefix names required\n");
     haveGoodArgs = false;
   }
+  if (!poisson && !interfereFile) {
+    if (haveGoodArgs)
+      fprintf(stderr, "\n");
+    fprintf(stderr, "ERROR: must specify crossover model, --pois or --intf\n");
+    haveGoodArgs = false;
+  }
+  else if (poisson && interfereFile) {
+    if (haveGoodArgs)
+      fprintf(stderr, "\n");
+    fprintf(stderr, "ERROR: can only use one crossover model, --pois or --intf\n");
+    haveGoodArgs = false;
+  }
 
   if (!haveGoodArgs) {
     printUsage(stderr, argv[0]);
@@ -198,21 +216,23 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "REQUIRED ARGUMENTS:\n");
   fprintf(out, "  -d <filename>\t\tdef file describing pedigree structures to simulate\n");
   fprintf(out, "  -m <filename>\t\tgenetic map file containing either a sex averaged map\n");
-  fprintf(out, "\t\t\tor both male and female maps (format given in README.md)\n");
+  fprintf(out, "\t\t\t  or both male and female maps (format in README.md)\n");
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
-  fprintf(out, "\t\t\tcan be gzipped (with .gz extension) or not\n");
+  fprintf(out, "\t\t\t  can be gzipped (with .gz extension) or not\n");
+  fprintf(out, "\t\t\t  can be an empty file when only bp output needed\n");
   fprintf(out, "  -o <prefix>\t\toutput prefix (creates <prefix>.vcf, <prefix>.bp, etc.)\n");
-  fprintf(out, "\t\t\tif input VCF is gzipped, output is too\n");
-  fprintf(out, "\n");
+  fprintf(out, "\t\t\t  if input VCF is gzipped, output is too\n");
+  fprintf(out, " AND EITHER:\n");
+  fprintf(out, "  --intf <filename>\tshape, escape values for interference model RECOMMENDED\n");
+  fprintf(out, " OR:\n");
+  fprintf(out, "  --pois\t\tPoisson crossover model (no interference)\n");
+  fprintf(out, "\n\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
   fprintf(out, "\n");
-  fprintf(out, "  --intf <filename>\tshape and escape fraction values for interference model\n");
-  fprintf(out, "\t\t\t(recommended)\n");
-  fprintf(out, "\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
-  fprintf(out, "\t\t\tgenotyping error at the marker (default .1)\n");
+  fprintf(out, "\t\t\t  genotyping error at the marker (default .1)\n");
   fprintf(out, "  --miss_rate <#>\tmissingness rate (default 1e-3; 0 disables)\n");
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
@@ -220,7 +240,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --founder_ids\t\tprint ids of founders to output file <prefix>.ids\n");
   fprintf(out, "\n");
   fprintf(out, "  --retain_extra <#>\toutput samples not used as founders to VCF file\n");
-  fprintf(out, "\t\t\tnumeric argument indicates number to retain\n");
-  fprintf(out, "\t\t\ta negative argument will retain all unused samples\n");
+  fprintf(out, "\t\t\t  numeric argument indicates number to retain\n");
+  fprintf(out, "\t\t\t  a negative argument will retain all unused samples\n");
   fprintf(out, "\n");
 }

@@ -177,7 +177,7 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
 
     fprintf(outs[o], "  Interference file:\t%s\n\n",
-	    CmdLineOpts::interfereFile == NULL ? "[none]" :
+	    CmdLineOpts::interfereFile == NULL ? "[none: Poisson model]" :
 						    CmdLineOpts::interfereFile);
 
     fprintf(outs[o], "  Genotype error rate:\t%.1le\n",
@@ -1272,7 +1272,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    vector<PhysGeneticPos> *curMap = geneticMap[chrIdx].second;
 
 	    // Make trivial haplotypes for founders in current generation:
-	    // no recombinations in founders
+	    // no crossovers in founders
 	    Segment trivialSeg;
 	    trivialSeg.endPos = curMap->back().physPos;
 

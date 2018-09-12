@@ -5,6 +5,7 @@ Table of Contents
       * [Def file](#def-file)
       * [Map file](#map-file)
       * [Input VCF file](#input-vcf-file)
+      * [Specifying crossover model](#specifying-crossover-model)
       * [Output VCF file](#output-vcf-file)
       * [Output BP file](#output-bp-file)
       * [Output fam file](#output-fam-file)
@@ -14,7 +15,6 @@ Table of Contents
       * [Citing Ped-sim](#citing-ped-sim)
       * [Other optional arguments](#other-optional-arguments)
          * [Specifying random seed](#specifying-random-seed---seed-)
-         * [Incorporating crossover interference](#incorporating-crossover-interference---intf-file)
          * [Genotyping error rate](#genotyping-error-rate---err_rate-)
          * [Rate of opposite homozygote errors](#rate-of-opposite-homozygote-errors---err_hom_rate-)
          * [Missingness rate](#missingness-rate---miss_rate-)
@@ -33,7 +33,11 @@ genetic maps and randomly assigns the sex of each parent when using such maps.
 
 Basic usage:
 
-    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix>
+    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --intf <filename>
+
+To use a non-interference crossover model, i.e., a Poisson model, use:
+
+    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --pois
 
 The simulator produces four output files: `[out_prefix].vcf` (or
 `[out_prefix].vcf.gz`), `[out_prefix].bp`, `[out_prefix].fam`, and
@@ -292,12 +296,7 @@ Map file <a name="map-file"></a>
 --------
 
 The genetic map file contains three columns for a sex-averaged map or four
-columns if using male and female maps. **When using only this genetic map, the
-simulator using a Poisson model of recombination which does not account for
-crossover interference; see the `--intf` option for simulating with an
-interference model.**
-
-The format of the genetic map file is:
+columns if using male and female maps. The format of this file is:
 
     [chromosome] [physical_position] [map_position0] <map_position1>
 
@@ -308,7 +307,7 @@ chromosome names must match the names in the input VCF file.
 `[map_position0]` is genetic position in centiMorgans, and should either be the
 sex-averaged genetic position if using only one map, or should be the male
 genetic position if using two maps. When using only one map, the simulator
-samples all recombinations from that one map and does not distinguish male and
+samples all crossovers from that one map and does not distinguish male and
 female parents.
 
 `<map_position1>` is likewise a genetic position in centiMorgans and should
@@ -338,13 +337,53 @@ from the input VCF file. This VCF must contain phased data for all individuals,
 with no missing data for any site. As most phasers automatically impute missing
 data, the latter requirement should be easily met.
 
-The input VCF file can be gzipped, and if it is, ped-sim prints the output VCF
+The input VCF file can be gzipped, and if it is, Ped-sim prints the output VCF
 in gzipped format.
 
-If your aim is to simulate only recombination break points and not genotype
-data, creating an empty file and supplying this as the input VCF file suffices.
+If your aim is to simulate only crossover break points and not genotype data,
+creating an empty file and supplying this as the input VCF file suffices.
 Ped-sim will perform the simulation, generate a BP file, and then generate an
 empty output VCF since the input contains no markers.
+
+------------------------------------------------------
+
+Specifying crossover model
+--------------------------
+
+Ped-sim performs simulation from either of two crossover models: one that
+incorporates crossover interference or a Poisson model. When the necessary
+parameters for crossover interference are available, we recommend using this
+model, as it is motivated by biological data and produces quite different
+results than a Poisson model. The two mutually exclusive options for specifying
+the crossover model for Ped-sim to use are given below.
+
+### Simulating with crossover interference: `--intf <file>`
+
+The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
+model of crossover. This model requires specification of `nu` and `p`
+parameters for each chromosome. The `interference` subdirectory in the
+repository contains a file `nu_p_campbell.tsv` with estimates of these
+parameters for the human autosomes from [Campbell et al.
+2015](https://www.nature.com/articles/ncomms7260).
+
+As with the VCF, the interference file must list chromosomes in the same order
+as the genetic map, and the chromosome names must be identical to the genetic
+map. The --intf file currently requires parameters to be given for both sexes
+and requires a genetic map for both males and females. Ped-sim will print an
+error if the genetic map only has one set of map positions.
+
+The format of the interference file is:
+
+    [chromosome] [nu_0] [p_0] [nu_1] [p_1]
+
+The `[nu_0]` and `[p_0]` parameters correspond to the first genetic map given
+(see [Map file](#map-file)), which is assumed to be male, and the `[nu_1]`
+and `[p_1]` parameters correspond to the second genetic map, which is assumed
+to be female.
+
+### Poisson crossover model: `--pois`
+
+Use the `--pois` option to simulate from a Poisson crossover model.
 
 ------------------------------------------------------
 
@@ -377,7 +416,7 @@ more break points. The start description is listed as
 
     [chromosome]:[start physical position]
 
-Following this, break points where recombinations occurred are indicated as
+Following this, break points where crossovers occurred are indicated as
 
     [founder haplotype]:[physical position]
 
@@ -472,29 +511,6 @@ The `--seed <#>` option enables specification of the random seed to be used.
 Without this option, the simulator generates a random seed using the current
 time (including microseconds).
 
-### Incorporating crossover interference: `--intf <file>`
-
-The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
-model of recombination. This model requires specification of `nu` and `p`
-parameters. The `interference` subdirectory in the repository contains a file
-`nu_p_campbell.tsv` with estimates of these parameters for the human autosomes
-from [Campbell et al. 2015](https://www.nature.com/articles/ncomms7260).
-
-As with the VCF, the interference file must list chromosomes in the same order
-as the genetic map, and the chromosome names must be identical to the genetic
-map. The --intf file currently requires information for both sexes in both the
-interference file and the genetic map; ped-sim will print an error if the
-genetic map only has one set of map positions.
-
-The format of the interference file is:
-
-    [chromosome] [nu_0] [p_0] [nu_1] [p_1]
-
-The `[nu_0]` and `[p_0]` parameters correspond to the first genetic map given
-(see [Map file](#map-file)), which is assumed to be male, and the `[nu_1]`
-and `[p_1]` parameters correspond to the second genetic map, which is assumed
-to be female.
-
 ### Genotyping error rate: `--err_rate <#>`
 
 To more accurately mimic real data, the simulator introduces genotyping errors
@@ -576,5 +592,5 @@ family id (first column) in the fam file.
 
 Be mindful of the number of files this will produce: it generates a pdf for
 each *copy* of all the family structures in the file. It may be helpful to run
-ped-sim with the number of copies of each structure set to 1 when using this
+Ped-sim with the number of copies of each structure set to 1 when using this
 script to check your structures.
