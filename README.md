@@ -5,7 +5,7 @@ Table of Contents
       * [Def file](#def-file)
       * [Map file](#map-file)
       * [Input VCF file](#input-vcf-file)
-      * [Specifying crossover model](#specifying-crossover-model)
+      * [Crossover model](#crossover-model)
       * [Output VCF file](#output-vcf-file)
       * [Output BP file](#output-bp-file)
       * [Output fam file](#output-fam-file)
@@ -347,17 +347,17 @@ empty output VCF since the input contains no markers.
 
 ------------------------------------------------------
 
-Specifying crossover model
---------------------------
+Crossover model
+---------------
 
 Ped-sim performs simulation from either of two crossover models: one that
-incorporates crossover interference or a Poisson model. When the necessary
+incorporates crossover interference, or a Poisson model. When the necessary
 parameters for crossover interference are available, we recommend using this
 model, as it is motivated by biological data and produces quite different
-results than a Poisson model. The two mutually exclusive options for specifying
-the crossover model for Ped-sim to use are given below.
+results than a Poisson model. The two options for crossover models that Ped-sim
+supports are below.
 
-### Simulating with crossover interference: `--intf <file>`
+### Crossover interference model: `--intf <file>`
 
 The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
 model of crossover. This model requires specification of `nu` and `p`
@@ -370,7 +370,8 @@ As with the VCF, the interference file must list chromosomes in the same order
 as the genetic map, and the chromosome names must be identical to the genetic
 map. The --intf file currently requires parameters to be given for both sexes
 and requires a genetic map for both males and females. Ped-sim will print an
-error if the genetic map only has one set of map positions.
+error when running with `--intf` if the genetic map only has one set of map
+positions.
 
 The format of the interference file is:
 
@@ -383,7 +384,7 @@ to be female.
 
 ### Poisson crossover model: `--pois`
 
-Use the `--pois` option to simulate from a Poisson crossover model.
+Use the `--pois` option to simulate using a Poisson crossover model.
 
 ------------------------------------------------------
 
