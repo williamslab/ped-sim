@@ -341,7 +341,7 @@ The input VCF file can be gzipped, and if it is, Ped-sim prints the output VCF
 in gzipped format.
 
 If your aim is to simulate only crossover break points and not genotype data,
-creating an empty file and supplying this as the input VCF file suffices.
+you can use an empty file (including /dev/null) as the input VCF file.
 Ped-sim will perform the simulation, generate a BP file, and then generate an
 empty output VCF since the input contains no markers.
 
