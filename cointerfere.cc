@@ -36,15 +36,13 @@ void COInterfere::initStartProb() {
     startProb[s][0] = 2.0 * (1.0 - p[s]) *
 		  boost::math::gamma_q(/*shape=*/nu[s], 0.5*step * rate) * step;
 //		  gsl_sf_gamma_inc_Q(/*shape=*/nu[s], 0.5*step * rate) * step;
-  for(int i = 1; i < N_BINS4START; i++) {
-    startProb[s][i] = startProb[s][i-1] +
+    for(int i = 1; i < N_BINS4START; i++) {
+      startProb[s][i] = startProb[s][i-1] +
 //	2.0*(1.0 - p[s]) * pgamma((i + 0.5)*step, nu[s], 1/rate, 0, 0) * step;
 	2.0*(1.0 - p[s]) *
 	    boost::math::gamma_q(/*shape=*/nu[s], (i + 0.5)*step * rate) * step;
 //	    gsl_sf_gamma_inc_Q(/*shape=*/nu[s], (i+0.5)*step * rate) * step;
-  }
-
-
+    }
   }
 }
 
