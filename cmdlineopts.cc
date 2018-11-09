@@ -20,7 +20,7 @@ char  *CmdLineOpts::outPrefix = NULL;
 bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
 double CmdLineOpts::genoErrRate = 1e-3;
-double CmdLineOpts::homErrRate = .1;
+double CmdLineOpts::homErrRate = 0;
 double CmdLineOpts::missRate = 1e-3;
 int    CmdLineOpts::keepPhase = 0;
 int    CmdLineOpts::retainExtra = 0;
@@ -232,7 +232,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
-  fprintf(out, "\t\t\t  genotyping error at the marker (default .1)\n");
+  fprintf(out, "\t\t\t  genotyping error at the marker (default 0)\n");
   fprintf(out, "  --miss_rate <#>\tmissingness rate (default 1e-3; 0 disables)\n");
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
