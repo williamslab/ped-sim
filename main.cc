@@ -908,7 +908,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       // file doesn't specify this, it is a founder, and one that hasn't been
       // assigned before. As such, we'll get a unique number associated with a
       // spouse of parIdx[0]. Negative values correspond to founders, so we
-      // decrement <prevGenSpouseNum>. (It is initialized to -1 above)
+      // decrement <prevGenSpouseNum>. (It is initialized to 0 above)
       prevGenSpouseNum[ parIdx[0] ]--;
       parIdx[1] = prevGenSpouseNum[ parIdx[0] ];
     }
