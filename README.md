@@ -1,6 +1,13 @@
+Pedigree Simulator
+==================
+Program to simulate pedigree structures. The method can use sex-specific
+genetic maps and randomly assigns the sex of each parent (or uses user-specified
+sexes) when using such maps.
+
 Table of Contents
 -----------------
-   * [Pedigree Simulator](#pedigree-simulator)
+   * Pedigree Simulator
+      * [Basic usage](#basic-usage)
       * [Compiling](#compiling)
       * [Def file](#def-file)
       * [Map file](#map-file)
@@ -26,12 +33,8 @@ Table of Contents
 
 ------------------------------------------------------
 
-Pedigree Simulator
-==================
-Program to simulate pedigree structures. The method can use sex-specific
-genetic maps and randomly assigns the sex of each parent when using such maps.
-
 Basic usage:
+------------
 
     ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --intf <filename>
 
@@ -72,7 +75,7 @@ allowed on a line by themselves beginning with #. Example def files are in the
 
 The first line of a pedigree specification contains four columns:
 
-    def [name] [#copies] [#generations]
+    def [name] [#copies] [#generations] <sex of i1>
 
 `[name]` gives the name of the pedigree, which must be unique for each pedigree
 structure in a given simulation run (i.e., a given def file). The simulator
@@ -82,9 +85,14 @@ uses this to generate the simulated individuals' sample ids (details in
 `[#copies]` gives the number of replicate simulations of the given pedigree
 structure to produce. While the replicates all have the same structure, they
 will descend from different founders and will have different randomized sex
-assignments (when using sex specific maps), and so are independent.
+assignments (when using sex specific maps and assuming `<sex of i1>` is not
+specified), and so are independent.
 
 `[#generations]` indicates the number of generations in the pedigree.
+
+`<sex of i1>` is an optional field giving the sex (F for female, M for male) of
+the individual with id `i1` (the reproducing individual) in each branch. See
+[Sample ids for simulated individuals](#samp-ids).
 
 After this first line, the def file lists simulation details corresponding to
 various generations in the pedigree. Each such line has the following format:
@@ -368,9 +376,9 @@ parameters for the human autosomes from [Campbell et al.
 
 As with the VCF, the interference file must list chromosomes in the same order
 as the genetic map, and the chromosome names must be identical to the genetic
-map. The --intf file currently requires parameters to be given for both sexes
-and requires a genetic map for both males and females. Ped-sim will print an
-error when running with `--intf` if the genetic map only has one set of map
+map. The --intf file requires parameters to be given for both sexes and
+requires a genetic map for both males and females. Ped-sim will print an error
+when running with `--intf` if the genetic map only has one set of map
 positions.
 
 The format of the interference file is:

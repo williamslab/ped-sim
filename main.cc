@@ -28,13 +28,14 @@ using namespace std;
 // Used to store details about each simulation
 struct SimDetails {
   SimDetails(int nFam, int nGen, int *retain, int *branches, int **parents,
-	     int **sexes, int **spouses, char *theName) {
+	     int **sexes, int i1FixedSex, int **spouses, char *theName) {
     numFam = nFam;
     numGen = nGen;
     numSampsToRetain = retain;
     numBranches = branches;
     branchParents = parents;
     sexConstraints = sexes;
+    i1Sex = i1FixedSex;
     branchNumSpouses = spouses;
     name = new char[ strlen(theName) + 1 ];
     strcpy(name, theName);
@@ -45,6 +46,7 @@ struct SimDetails {
   int *numBranches;
   int **branchParents;
   int **sexConstraints;
+  int i1Sex;
   int **branchNumSpouses;
   char *name;
 };
@@ -82,8 +84,8 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 		       int *&prevGenSpouseNum,
 		       vector<bool> &branchParentsAssigned,
 		       vector< boost::dynamic_bitset<>* > &spouseDependencies,
-		       const char *delim, char *&saveptr, char *&endptr,
-		       int line);
+		       const int i1Sex, const char *delim, char *&saveptr,
+		       char *&endptr, int line);
 void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
 			  int prevGenNumBranches,
 			  vector< boost::dynamic_bitset<>*> &spouseDependencies,
@@ -296,6 +298,9 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   // branch. For example, if the person in branch 1 has children with the
   // individual in branch 2 and 3, branch 2 and 3 must have the same sex.
   int **curSexConstraints = NULL;
+  // If all i1 individuals are to have the same sex, the following gives its
+  // value. A value of -1 corresponds to random assignment.
+  int curI1Sex = -1;
   // Counts of number of non-founder spouses for each generation/branch
   int **curBranchNumSpouses = NULL;
   int curNumGen = 0;
@@ -336,11 +341,14 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       char *name = strtok_r(NULL, delim, &saveptr);
       char *numFamStr = strtok_r(NULL, delim, &saveptr);
       char *numGenStr = strtok_r(NULL, delim, &saveptr);
+      char *i1SexStr = strtok_r(NULL, delim, &saveptr);
+      // Note: leaving i1SexStr out of the next conditional because it can be
+      //       NULL or non-NULL
       if (name == NULL || numFamStr == NULL || numGenStr == NULL ||
 				      strtok_r(NULL, delim, &saveptr) != NULL) {
-	fprintf(stderr, "ERROR: line %d in def: expect four fields for pedigree definition:\n",
+	fprintf(stderr, "ERROR: line %d in def: expect four or five fields for pedigree definition:\n",
 		line);
-	fprintf(stderr, "       def [name] [numFam] [numGen]\n");
+	fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
 	exit(5);
       }
       int curNumFam = strtol(numFamStr, &endptr, 10);
@@ -359,6 +367,23 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	if (errno != 0)
 	  perror("strtol");
 	exit(2);
+      }
+
+      if (i1SexStr == NULL)
+	curI1Sex = -1;
+      else {
+	if (strcmp(i1SexStr, "F") == 0) {
+	  curI1Sex = 1;
+	}
+	else if (strcmp(i1SexStr, "M") == 0) {
+	  curI1Sex = 0;
+	}
+	else {
+	  fprintf(stderr, "ERROR: line %d in def: allowed values for sex of i1 field are 'M' and 'F'\n",
+		  line);
+	  fprintf(stderr, "       got %s\n", i1SexStr);
+	  exit(7);
+	}
       }
 
       // TODO: slow linear search to ensure lack of repetition of the pedigree
@@ -391,7 +416,8 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       }
       simDetails.emplace_back(curNumFam, curNumGen, curNumSampsToRetain,
 			      curNumBranches, curBranchParents,
-			      curSexConstraints, curBranchNumSpouses, name);
+			      curSexConstraints, curI1Sex,
+			      curBranchNumSpouses, name);
       continue;
     }
 
@@ -400,9 +426,9 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 
     // is there a current pedigree?
     if (curNumSampsToRetain == NULL) {
-      fprintf(stderr, "ERROR: line %d in def: expect four fields for pedigree definition:\n",
+      fprintf(stderr, "ERROR: line %d in def: expect four or five fields for pedigree definition:\n",
 	      line);
-      fprintf(stderr, "       def [name] [numFam] [numGen]\n");
+      fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
       exit(5);
     }
 
@@ -528,8 +554,8 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 			thisGenNumBranches, curBranchParents[generation - 1],
 			/*prevGenSexConst=*/curSexConstraints[generation - 2],
 			/*prevSpouseNum=*/curBranchNumSpouses[generation - 2],
-			branchParentsAssigned, spouseDependencies, delim,
-			saveptr, endptr, line);
+			branchParentsAssigned, spouseDependencies, curI1Sex,
+			delim,saveptr, endptr, line);
     else if (strtok_r(NULL, delim, &saveptr) != NULL) {
       fprintf(stderr, "ERROR: line %d in def: first generation cannot have parent specifications\n",
 	      line);
@@ -797,8 +823,8 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 		       int *&prevGenSpouseNum,
 		       vector<bool> &branchParentsAssigned,
 		       vector< boost::dynamic_bitset<>* > &spouseDependencies,
-		       const char *delim, char *&saveptr, char *&endptr,
-		       int line) {
+		       const int i1Sex, const char *delim, char *&saveptr,
+		       char *&endptr, int line) {
   assert(prevGenSpouseNum == NULL);
   prevGenSpouseNum = new int[prevGenNumBranches];
   for(int b = 0; b < prevGenNumBranches; b++)
@@ -891,6 +917,12 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	fprintf(stderr, "ERROR: line %d in def: cannot have both parents be from same branch\n",
 		line);
 	exit(8);
+      }
+      if (i1Sex >= 0) {
+	fprintf(stderr, "ERROR: line %d in def: cannot have fixed sex for i1 samples and marriages\n",
+		line);
+	fprintf(stderr, "       between branches -- i1's will have the same sex and cannot reproduce\n");
+	exit(9);
       }
       updateSexConstraints(prevGenSexConstraints, parIdx, prevGenNumBranches,
 			   spouseDependencies, line);
@@ -1196,6 +1228,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int *numBranches = simDetails[ped].numBranches;
     int **branchParents = simDetails[ped].branchParents;
     int **sexConstraints = simDetails[ped].sexConstraints;
+    int i1Sex = simDetails[ped].i1Sex;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1232,7 +1265,9 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	  if (sexSpecificMaps) {
 	    int branchAssign;
-	    if (sexConstraints[curGen] == NULL ||
+	    if (i1Sex >= 0)
+	      branchAssign = i1Sex;
+	    else if (sexConstraints[curGen] == NULL ||
 					sexConstraints[curGen][branch] == -1) {
 	      // no dependencies, just pick randomly
 	      branchAssign = coinFlip(randomGen);
