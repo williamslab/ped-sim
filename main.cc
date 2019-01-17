@@ -2043,6 +2043,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int h = 0; h < 2; h++) {
 	if (alleles[h][0] == '.') {
 	  fprintf(stderr, "\nERROR: simulator currently requires all positions to be non-missing\n");
+	  fprintf(stderr, "         see variant on chromosome/contig %s, position %d\n",
+		  chrom, pos);
 	  exit(5);
 	}
 	hapAlleles[numStored++] = alleles[h];
