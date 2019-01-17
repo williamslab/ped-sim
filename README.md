@@ -343,7 +343,9 @@ Input VCF file
 All founders in the simulated pedigrees are randomly sampled individuals
 from the input VCF file. This VCF must contain phased data for all individuals,
 with no missing data for any site. As most phasers automatically impute missing
-data, the latter requirement should be easily met.
+data, the latter requirement should be easily met. __At present, Ped-sim only
+supports the GT FORMAT field, so please remove additional fields before using
+Ped-sim.__
 
 The input VCF file can be gzipped, and if it is, Ped-sim prints the output VCF
 in gzipped format.
@@ -599,7 +601,7 @@ This plots all pedigree structures given in the `[base name].fam` file. The
 output files are named `[base name]-[family id].pdf`, with a file for each
 family id (first column) in the fam file.
 
-Be mindful of the number of files this will produce: it generates a pdf for
+**Be mindful of the number of files this will produce:** it generates a pdf for
 each *copy* of all the family structures in the file. It may be helpful to run
 Ped-sim with the number of copies of each structure set to 1 when using this
 script to check your structures.
