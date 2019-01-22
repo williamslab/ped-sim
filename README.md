@@ -509,7 +509,7 @@ given pedigree, all chromosomes need to be simulated in the same run.
 Citing Ped-sim
 --------------
 
-If you use Ped-sim in your work, please cite [Ramstetter et al. (2018)](https://www.sciencedirect.com/science/article/pii/S0002929718301691).
+If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://www.biorxiv.org/content/early/2019/01/22/527655).
 
 ------------------------------------------------------
 
