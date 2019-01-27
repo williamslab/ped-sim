@@ -2280,9 +2280,11 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      }
 	    }
 
-	    // print sex and phenotype:
+	    // print sex and phenotype; phenotype depends on whether the same
+	    // gets printed:
 	    int sex = theSamples[ped][fam][gen][branch][ind].sex;
-	    fprintf(out, "%d -9\n", sex+1);
+	    int pheno = (numSampsToRetain[gen] > 0) ? 1 : -9;
+	    fprintf(out, "%d %d\n", sex+1, pheno);
 	  }
 	}
       }
