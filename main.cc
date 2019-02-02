@@ -10,11 +10,11 @@
 #include <math.h>
 #include <string.h>
 #include <vector>
+#include <set>
 #include <random>
 #include <sys/time.h>
 #include <algorithm>
 #include <assert.h>
-#include <boost/dynamic_bitset.hpp>
 #include <zlib.h>
 #include "cmdlineopts.h"
 #include "cointerfere.h"
@@ -26,8 +26,23 @@ using namespace std;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
+struct Parent {
+  // The generation and branch number of the given parent
+  int gen;
+  int branch;
+};
+
+struct ParentComp {
+  bool operator() (const Parent &lhs, const Parent &rhs) const {
+    return (lhs.gen < rhs.gen) ||
+				(lhs.gen == rhs.gen && lhs.branch < rhs.branch);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Used to store details about each simulation
 struct SimDetails {
-  SimDetails(int nFam, int nGen, int *retain, int *branches, int **parents,
+  SimDetails(int nFam, int nGen, int *retain, int *branches, Parent **parents,
 	     int **sexes, int i1FixedSex, int **spouses, char *theName) {
     numFam = nFam;
     numGen = nGen;
@@ -44,7 +59,7 @@ struct SimDetails {
   int numGen;
   int *numSampsToRetain;
   int *numBranches;
-  int **branchParents;
+  Parent **branchParents;
   int **sexConstraints;
   int i1Sex;
   int **branchNumSpouses;
@@ -76,20 +91,21 @@ struct Person {
 // Function decls
 void readDef(vector<SimDetails> &simDetails, char *defFile);
 void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-				int *&thisGenBranchParents,
+				Parent *&thisGenBranchParents, int prevGen,
 				int *prevGenSpouseNum = NULL,
 				vector<bool> *branchParentsAssigned = NULL);
-void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-		       int *&thisGenBranchParents, int *&prevGenSexConstraints,
+void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
+		       int curGen, int **sexConstraints,
 		       int *&prevGenSpouseNum,
 		       vector<bool> &branchParentsAssigned,
-		       vector< boost::dynamic_bitset<>* > &spouseDependencies,
+		       vector< set<Parent,ParentComp>* > &spouseDependencies,
 		       const int i1Sex, const char *delim, char *&saveptr,
 		       char *&endptr, int line);
-void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
-			  int prevGenNumBranches,
-			  vector< boost::dynamic_bitset<>*> &spouseDependencies,
+void updateSexConstraints(int **sexConstraints, Parent pars[2],
+			  int *numBranches,
+			  vector< set<Parent,ParentComp>*> &spouseDependencies,
 			  int line);
+bool intersectNonEmpty(set<Parent,ParentComp> &a, set<Parent,ParentComp> &b);
 void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps);
 void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
@@ -99,7 +115,7 @@ int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      bool sexSpecificMaps, vector<COInterfere> &coIntf);
 void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
-		     int **branchParents, int **branchNumSpouses,
+		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
@@ -290,10 +306,10 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   int *curNumBranches = NULL;
   // Who are the parents of each branch in each generation?
   // Contains <curNumGen> rows, and <2*curNumBranches[gen]> columns on each row.
-  // Stores the previous branch numbers that contain the two parents.
-  // Negative values correspond to founders that are stored in the same
+  // Stores the generation and branch numbers of the two parents.
+  // Negative branch values correspond to founders that are stored in the same
   // branch number as the other parent.
-  int **curBranchParents = NULL;
+  Parent **curBranchParents = NULL;
   // Gives numerical values indicating dependencies of sex assignments for each
   // branch. For example, if the person in branch 1 has children with the
   // individual in branch 2 and 3, branch 2 and 3 must have the same sex.
@@ -316,7 +332,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   vector<bool> branchParentsAssigned;
   // Stores sets of individuals that are required to have the same and/or
   // opposite sex assignments by virtue of their being spouses.
-  vector< boost::dynamic_bitset<>* > spouseDependencies;
+  vector< set<Parent,ParentComp>* > spouseDependencies;
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
@@ -398,7 +414,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 
       curNumSampsToRetain = new int[curNumGen];
       curNumBranches = new int[curNumGen];
-      curBranchParents = new int*[curNumGen];
+      curBranchParents = new Parent*[curNumGen];
       curSexConstraints = new int*[curNumGen];
       curBranchNumSpouses = new int*[curNumGen];
       if (lastReadGen >= 0)
@@ -448,6 +464,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     if (numSampsStr == NULL) {
       printf("ERROR: improper line number %d in def file: expected at least two fields\n",
 	      line);
+      exit(5);
     }
     int numSamps = strtol(numSampsStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
@@ -509,7 +526,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       // assign default parents for each branch:
       if (i > 0)
 	assignDefaultBranchParents(curNumBranches[i-1], curNumBranches[i],
-				   curBranchParents[i]);
+				   curBranchParents[i], /*prevGen=*/i-1);
     }
 
     int thisGenNumBranches;
@@ -550,9 +567,8 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     // for this generation. Note that in the first generation, all individuals
     // are necessarily founders so there should not be any specification.
     if (generation - 1 > 0)
-      readBranchParents(/*prevGenBranches=*/curNumBranches[generation - 2],
-			thisGenNumBranches, curBranchParents[generation - 1],
-			/*prevGenSexConst=*/curSexConstraints[generation - 2],
+      readBranchParents(curNumBranches, curBranchParents[generation - 1],
+			/*curGen=*/generation - 1, curSexConstraints,
 			/*prevSpouseNum=*/curBranchNumSpouses[generation - 2],
 			branchParentsAssigned, spouseDependencies, curI1Sex,
 			delim,saveptr, endptr, line);
@@ -656,6 +672,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     }
     else if (mapPos2Str != NULL) {
       fprintf(stderr, "ERROR: expected three columns on all lines in map file but more seen\n");
+      exit(2);
     }
 
     curMap->emplace_back(physPos, mapPos1, mapPos2);
@@ -767,7 +784,7 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 // Gives the default parent assignment for any branches that have not had
 // their parents explicitly specified.
 void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-				int *&thisGenBranchParents,
+				Parent *&thisGenBranchParents, int prevGen,
 				int *prevGenSpouseNum,
 				vector<bool> *branchParentsAssigned) {
   // how many new branches is each previous branch the parent of?
@@ -777,7 +794,7 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 
   // allocate space to store the parents of each branch
   if (thisGenBranchParents == NULL)
-    thisGenBranchParents = new int[2 * thisGenNumBranches];
+    thisGenBranchParents = new Parent[2 * thisGenNumBranches];
 
   for(int prevB = 0; prevB < prevGenNumBranches; prevB++) {
     if (prevB >= thisGenNumBranches)
@@ -791,7 +808,8 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       int curBranch = prevB * multFactor + multB;
       if (branchParentsAssigned && (*branchParentsAssigned)[curBranch])
 	continue; // skip assignment of branches that were assigned previously
-      thisGenBranchParents[curBranch*2] = prevB;
+      thisGenBranchParents[curBranch*2].gen = prevGen;
+      thisGenBranchParents[curBranch*2].branch = prevB;
       if (!spouseNumDefined) {
 	if (prevGenSpouseNum) {
 	  prevGenSpouseNum[ prevB ]--;
@@ -801,7 +819,8 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	  spouseNum = -1;
 	spouseNumDefined = true;
       }
-      thisGenBranchParents[curBranch*2 + 1] = spouseNum;
+      thisGenBranchParents[curBranch*2 + 1].gen = prevGen;
+      thisGenBranchParents[curBranch*2 + 1].branch = spouseNum;
     }
   }
   // For any branches in this generation that are not an exact multiple of
@@ -813,21 +832,25 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     if (branchParentsAssigned && (*branchParentsAssigned)[newB])
       continue; // skip assignment of branches that were assigned previously
     // undefined parents for excess branches: new founders
-    thisGenBranchParents[newB*2] = thisGenBranchParents[newB*2 + 1] = -1;
+    thisGenBranchParents[newB*2].gen = prevGen;
+    thisGenBranchParents[newB*2].branch =
+				  thisGenBranchParents[newB*2 + 1].branch = -1;
   }
 }
 
 // Reads in branch parent specification and makes the parent assignments
-void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-		       int *&thisGenBranchParents, int *&prevGenSexConstraints,
+void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
+		       int curGen, int **sexConstraints,
 		       int *&prevGenSpouseNum,
 		       vector<bool> &branchParentsAssigned,
-		       vector< boost::dynamic_bitset<>* > &spouseDependencies,
+		       vector< set<Parent,ParentComp>* > &spouseDependencies,
 		       const int i1Sex, const char *delim, char *&saveptr,
 		       char *&endptr, int line) {
+  int prevGen = curGen - 1;
+
   assert(prevGenSpouseNum == NULL);
-  prevGenSpouseNum = new int[prevGenNumBranches];
-  for(int b = 0; b < prevGenNumBranches; b++)
+  prevGenSpouseNum = new int[numBranches[prevGen]];
+  for(int b = 0; b < numBranches[prevGen]; b++)
     // What number have we assigned through for founder spouses of individuals
     // in the previous generation? Note that founders have an id (in the code
     // for the purposes of <curBranchParents>) that are always negative and
@@ -835,18 +858,18 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     // each branch in the previous generation (see assignDefaultBranchParents())
     prevGenSpouseNum[b] = 0;
 
-  thisGenBranchParents = new int[2 * thisGenNumBranches];
+  thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
 
   spouseDependencies.clear();
-  prevGenSexConstraints = new int[prevGenNumBranches];
-  for(int i = 0; i < prevGenNumBranches; i++)
-    prevGenSexConstraints[i] = -1;
+  sexConstraints[prevGen] = new int[numBranches[prevGen]];
+  for(int i = 0; i < numBranches[prevGen]; i++)
+    sexConstraints[prevGen][i] = -1;
 
   // so far, all the branches in the current generation are assigned default
   // parents; track which branches get explicitly assigned and throw an error
   // if the same branch is assigned more than once
   branchParentsAssigned.clear();
-  for(int i = 0; i < thisGenNumBranches; i++)
+  for(int i = 0; i < numBranches[curGen]; i++)
     branchParentsAssigned.push_back(false);
 
   while (char *assignToken = strtok_r(NULL, delim, &saveptr)) {
@@ -875,45 +898,93 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       assignPar[1] = &(assignPar[0][i+1]);
     }
 
-    int parIdx[2] = { -1, -1 };
+    Parent pars[2];
+    for(int p = 0; p < 2; p++) {
+      pars[p].branch = -1;
+      pars[p].gen = prevGen;
+    }
     for(int p = 0; p < 2 && assignPar[p] != NULL && assignPar[p][0] != '\0';
 									  p++) {
-      parIdx[p] = strtol(assignPar[p], &endptr, 10) - 1; // 0 indexed => -1
+      // Check for generation number
+      char *genNumStr = NULL;
+      for(i = 0; assignPar[p][i] != '^' && assignPar[p][i] != '\0'; i++);
+      if (assignPar[p][i] == '^') {
+	// Have a generation number
+	if (p == 0) {
+	  fprintf(stderr, "ERROR: line %d in def: parent assignment for branches %s gives generation\n",
+		  line, assignBranches);
+	  fprintf(stderr, "       number for the first parent, but this is only allowed for the second\n");
+	  fprintf(stderr, "       parent; for example, 2:1_3^1 has branch 1 from previous generation\n");
+	  fprintf(stderr, "       married to branch 3 from generation 1\n");
+	  exit(3);
+	}
+	assignPar[p][i] = '\0';
+	genNumStr = &(assignPar[p][i+1]);
+	pars[p].gen = strtol(genNumStr, &endptr, 10) - 1; // 0 indexed => -1
+	if (errno != 0 || *endptr != '\0') {
+	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		  line, assignBranches);
+	  fprintf(stderr, "       malformed generation number string for second parent: %s\n",
+		  genNumStr);
+	  if (errno != 0)
+	    perror("strtol");
+	  exit(5);
+	}
+	if (pars[p].gen > prevGen) {
+	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		  line, assignBranches);
+	  fprintf(stderr, "       generation number %s for second parent is after previous generation\n",
+		  genNumStr);
+	  exit(-7);
+	}
+	else if (pars[p].gen < 0) {
+	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		  line, assignBranches);
+	  fprintf(stderr, "       generation number %s for second parent is before first generation\n",
+		  genNumStr);
+	  exit(5);
+	}
+      }
+
+      pars[p].branch = strtol(assignPar[p], &endptr, 10) - 1; // 0 indexed => -1
       if (errno != 0 || *endptr != '\0') {
 	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
-	    line, assignBranches);
+		line, assignBranches);
 	if (errno != 0)
 	  perror("strtol");
 	exit(2);
       }
-      if (parIdx[p] < 0) {
+      if (pars[p].branch < 0) {
 	fprintf(stderr, "ERROR: line %d in def: parent assignments must be of positive branch numbers\n",
 	    line);
 	exit(8);
       }
-      else if (parIdx[p] >= prevGenNumBranches) {
+      else if (pars[p].branch >= numBranches[ pars[p].gen ]) {
 	fprintf(stderr, "ERROR: line %d in def: parent branch number %d is more than the number of\n",
-		line, parIdx[p]+1);
-	fprintf(stderr, "       branches (%d) in the previous generation\n",
-		prevGenNumBranches);
+		line, pars[p].branch+1);
+	fprintf(stderr, "       branches (%d) in generation %d\n",
+		numBranches[ pars[p].gen ], pars[p].gen+1);
 	exit(8);
       }
+      // so that we can print the parent assignment in case of errors below
+      if (genNumStr != NULL)
+	genNumStr[-1] = '^';
     }
-    if (parIdx[0] == -1) {
+    if (pars[0].branch == -1) {
       // new founder
-      assert(parIdx[1] == -1);
+      assert(pars[1].branch == -1);
     }
-    else if (parIdx[1] == -1) {
+    else if (pars[1].branch == -1) {
       // Have not yet assigned the numerical id of parent 1. Because the def
       // file doesn't specify this, it is a founder, and one that hasn't been
       // assigned before. As such, we'll get a unique number associated with a
-      // spouse of parIdx[0]. Negative values correspond to founders, so we
-      // decrement <prevGenSpouseNum>. (It is initialized to 0 above)
-      prevGenSpouseNum[ parIdx[0] ]--;
-      parIdx[1] = prevGenSpouseNum[ parIdx[0] ];
+      // spouse of pars[0].branch. Negative values correspond to founders, so
+      // we decrement <prevGenSpouseNum>. (It is initialized to 0 above)
+      prevGenSpouseNum[ pars[0].branch ]--;
+      pars[1].branch = prevGenSpouseNum[ pars[0].branch ];
     }
     else {
-      if (parIdx[0] == parIdx[1]) {
+      if (pars[0].branch == pars[1].branch && pars[0].gen == pars[1].gen) {
 	fprintf(stderr, "ERROR: line %d in def: cannot have both parents be from same branch\n",
 		line);
 	exit(8);
@@ -924,7 +995,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	fprintf(stderr, "       between branches -- i1's will have the same sex and cannot reproduce\n");
 	exit(9);
       }
-      updateSexConstraints(prevGenSexConstraints, parIdx, prevGenNumBranches,
+      updateSexConstraints(sexConstraints, pars, numBranches,
 			   spouseDependencies, line);
     }
 
@@ -933,7 +1004,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       assignPar[1][-1] = '_';
     char *fullAssignPar = assignPar[0];
 
-    // process the branches to be assigned <parIdx> as parents
+    // process the branches to be assigned <pars> as parent branches
     bool done = false;
     // the starting branch for a range (delimited by '-'); see below
     char *startBranch = NULL;
@@ -950,9 +1021,12 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	startBranch = assignBranches;
 	assignBranches = &(assignBranches[i+1]); // go through next loop
       }
-      if (assignBranches[i] == ',' || assignBranches[i] == '\0') {
-	if (assignBranches[i] == '\0')
+      else if (assignBranches[i] == ',' || assignBranches[i] == '\0') {
+	if (assignBranches[i] == '\0') {
 	  done = true;
+	  if (i == 0)
+	    break; // early termination, will get error below
+	}
 	else
 	  assignBranches[i] = '\0';
 
@@ -991,7 +1065,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	    }
 	    branchParentsAssigned[branch] = true;
 	    for(int p = 0; p < 2; p++)
-	      thisGenBranchParents[branch*2 + p] = parIdx[p];
+	      thisGenBranchParents[branch*2 + p] = pars[p];
 	  }
 	}
 	else {
@@ -1002,7 +1076,7 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	  }
 	  branchParentsAssigned[curBranch] = true;
 	  for(int p = 0; p < 2; p++)
-	    thisGenBranchParents[curBranch*2 + p] = parIdx[p];
+	    thisGenBranchParents[curBranch*2 + p] = pars[p];
 	}
 
 	assignBranches = &(assignBranches[i+1]); // go through next loop
@@ -1016,99 +1090,67 @@ void readBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     }
   }
 
-  // Now update <prevGenSexConstraints> array to have integer values
-  // such that all individuals with the same integer will be assigned the same
-  // sex. Even numbers will be assigned a random sex and that number+1 will be
-  // assigned the opposite sex.
-  //
-  // Which individuals have we already updated the index of?
-  boost::dynamic_bitset<> updated(prevGenNumBranches);
+  // TODO: As a space optimization, could compress the spouseDependencies
+  //       vector more. When combining two sets, the indexes of one of the set
+  //       are no longer used, but the size of the spouseDependencies list
+  //       still accounts for them.
   assert(spouseDependencies.size() % 2 == 0);
-  int nextIndex = 0;
-  for(unsigned int i = 0; i < spouseDependencies.size(); i += 2) {
-    if ((updated & *spouseDependencies[i]).none()) {
-      // should also hold for the spousal set:
-      assert((updated & *spouseDependencies[i+1]).none());
-
-      // haven't yet updated <prevGenSexAssignment> for individuals in
-      // <spouseDependencies[i,i+1]> -- do the update for each:
-      for(int p = 0; p < 2; p++) { // for the two pairs of samples
-	for(unsigned int samp = spouseDependencies[i+p]->find_first();
-		samp < spouseDependencies[i+p]->size();
-		samp = spouseDependencies[i+p]->find_next(samp)) {
-	  prevGenSexConstraints[samp] = nextIndex;
-	}
-
-	updated |= *spouseDependencies[i+p]; // have now updated these samples
-	nextIndex++; // different index for the next set
-      }
-    }
-    else {
-      // Ensure consistency:
-      for(int p = 0; p < 2; p++)
-	assert((updated & *spouseDependencies[i+p]) ==
-						      *spouseDependencies[i+p]);
-      // remove the pair of elements from spouseDependencies
-      spouseDependencies.erase(spouseDependencies.begin() + i);
-      // note: might think we should erasa(begin() + i+1), but because of the
-      // the erase() command just above, that element is now at begin() + i
-      spouseDependencies.erase(spouseDependencies.begin() + i);
-      // so that we don't skip over the elements that are now at positions i,i+1
-      i -= 2;
-    }
-  }
-  
   // don't need the sets anymore:
   for(unsigned int i = 0; i < spouseDependencies.size(); i++)
-    delete spouseDependencies[i];
+    if (spouseDependencies[i] != NULL)
+      delete spouseDependencies[i];
 
-  assignDefaultBranchParents(prevGenNumBranches, thisGenNumBranches,
-			     thisGenBranchParents, prevGenSpouseNum,
+  assignDefaultBranchParents(numBranches[prevGen], numBranches[curGen],
+			     thisGenBranchParents, prevGen, prevGenSpouseNum,
 			     &branchParentsAssigned);
 }
 
 // Given the branch indexes of two parents, adds constraints and error checks
 // to ensure that this couple does not violate the requirement that parents
 // must have opposite sex.
-void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
-			  int prevGenNumBranches,
-			  vector< boost::dynamic_bitset<>*> &spouseDependencies,
+void updateSexConstraints(int **sexConstraints, Parent pars[2],
+			  int *numBranches,
+			  vector< set<Parent,ParentComp>* > &spouseDependencies,
 			  int line) {
   // we check these things in the caller, but just to be sure:
-  assert(parIdx[0] >= 0 && parIdx[1] >= 0);
-  assert(parIdx[0] < prevGenNumBranches && parIdx[1] < prevGenNumBranches);
+  for(int p = 0; p < 2; p++) {
+    assert(pars[p].branch >= 0);
+    assert(pars[p].branch < numBranches[ pars[p].gen ]);
+  }
 
-  if (prevGenSexConstraints[ parIdx[0] ] == -1 &&
-      prevGenSexConstraints[ parIdx[1] ] == -1) {
+  if (sexConstraints[ pars[0].gen ][ pars[0].branch ] == -1 &&
+      sexConstraints[ pars[1].gen ][ pars[1].branch ] == -1) {
     // neither is a member of a spouse set: create and add to
     // <spouseDependencies>
-    boost::dynamic_bitset<> *sets[2];
+    set<Parent,ParentComp> *sets[2];
     for(int p = 0; p < 2; p++) {
-      sets[p] = new boost::dynamic_bitset<>(prevGenNumBranches);
-      sets[p]->set( parIdx[p] );
+      sets[p] = new set<Parent,ParentComp>();
+      sets[p]->insert( pars[p] );
       // which index in spouseDependencies is the set corresponding to this
       // parent stored in? As we're about to add it, just below this, the
       // current size will be the index
-      prevGenSexConstraints[ parIdx[p] ] = spouseDependencies.size();
-      spouseDependencies.push_back(sets[p]);
+      sexConstraints[pars[p].gen][pars[p].branch] = spouseDependencies.size();
+      spouseDependencies.push_back( sets[p] );
     }
   }
-  else if (prevGenSexConstraints[ parIdx[0] ] == -1 ||
-	   prevGenSexConstraints[ parIdx[1] ] == -1) {
+  else if (sexConstraints[ pars[0].gen ][ pars[0].branch ] == -1 ||
+	   sexConstraints[ pars[1].gen ][ pars[1].branch ] == -1) {
     // one spouse is a member of a spouse set and the other is not: add the
     // other parent to the opposite spouse set, error check, and update state
     int assignedPar = -1;
-    if (prevGenSexConstraints[ parIdx[0] ] >= 0)
+    if (sexConstraints[ pars[0].gen ][ pars[0].branch ] >= 0)
       assignedPar = 0;
     else
       assignedPar = 1;
 
     int otherPar = assignedPar ^ 1;
-    int assignedSetIdx = prevGenSexConstraints[ parIdx[ assignedPar ] ];
+    int assignedSetIdx = sexConstraints[ pars[assignedPar].gen ]
+						  [ pars[assignedPar].branch ];
 
     // since <otherPar> isn't in a spouse set yet, it definitely shouldn't be in
     // the same spouse set as <assignedPar>
-    assert(!spouseDependencies[ assignedSetIdx ]->test( parIdx[otherPar] ));
+    assert(spouseDependencies[ assignedSetIdx ]->find( pars[otherPar] ) ==
+				    spouseDependencies[assignedSetIdx]->end());
 
     // NOTE: The following is a trick that relies on the fact that sets are
     // stored as sequential pairs in <spouseDependencies>. Ex: indexes 0 and 1
@@ -1117,24 +1159,25 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
     // an even number that is 1 minus an odd value or the odd number that is 1
     // plus an even value, it suffices to flip the lowest order bit:
     int otherSetIdx = assignedSetIdx ^ 1;
-    // add <parIdx[otherPar]> to the set containing spouses of
-    // <parIdx[assignedPar]>
-    spouseDependencies[ otherSetIdx ]->set( parIdx[otherPar] );
-    prevGenSexConstraints[ parIdx[otherPar] ] = otherSetIdx;
+    // add <pars[otherPar]> to the set containing spouses of <pars[assignedPar]>
+    spouseDependencies[ otherSetIdx ]->insert( pars[otherPar] );
+    sexConstraints[ pars[otherPar].gen ][ pars[otherPar].branch ] = otherSetIdx;
   }
   else {
-    assert(prevGenSexConstraints[ parIdx[0] ] >= 0 &&
-				      prevGenSexConstraints[ parIdx[1] ] >= 0);
+    assert(sexConstraints[ pars[0].gen ][ pars[0].branch ] >= 0 &&
+			  sexConstraints[ pars[1].gen ][ pars[1].branch ] >= 0);
     // both are members of spouse sets
 
-    if (prevGenSexConstraints[ parIdx[0] ] / 2 ==
-				      prevGenSexConstraints[ parIdx[1] ] / 2) {
+    if (sexConstraints[ pars[0].gen ][ pars[0].branch ] / 2 ==
+			  sexConstraints[ pars[1].gen ][ pars[1].branch ] / 2) {
       // spouse sets from the same pair of sets
-      if (prevGenSexConstraints[ parIdx[0] ] ==
-					  prevGenSexConstraints[ parIdx[1] ]) {
-	fprintf(stderr, "ERROR: line %d in def: assigning %d and %d as parents is impossible due to\n",
-	    line, parIdx[0]+1, parIdx[1]+1);
-	fprintf(stderr, "       other parent assignments: they necessarily have same sex\n");
+      if (sexConstraints[ pars[0].gen ][ pars[0].branch ] ==
+			      sexConstraints[ pars[1].gen ][ pars[1].branch ]) {
+	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d and branch %d from\n",
+		line, pars[0].branch+1, pars[0].gen+1, pars[1].branch+1);
+	fprintf(stderr, "       generation %d as parents is impossible due to other parent assignments:\n",
+		pars[1].gen+1);
+	fprintf(stderr, "       they necessarily have same sex\n");
 	exit(3);
       }
       // otherwise done: are already members of sets that are pairs and
@@ -1146,61 +1189,77 @@ void updateSexConstraints(int *&prevGenSexConstraints, int parIdx[2],
       // constrained to be opposite sex
       int setIdxes[2][2]; // current set indexes
       for(int p = 0; p < 2; p++) {
-	setIdxes[p][0] = prevGenSexConstraints[ parIdx[p] ];
+	setIdxes[p][0] = sexConstraints[ pars[p].gen ][ pars[p].branch ];
 	// see comment denoted with NOTE a little ways above for why this works:
 	setIdxes[p][1] = setIdxes[p][0] ^ 1;
       }
 
-      // ensure the values are different pointers (if this process already
-      // happened they could be the same pointers)
-      if (spouseDependencies[ setIdxes[0][0] ] !=
-					spouseDependencies[ setIdxes[1][1] ]) {
-	assert(spouseDependencies[ setIdxes[0][1] ] !=
+      for(int i = 0; i < 2; i++)
+	for(int j = 0; j < 2; j++)
+	  assert(spouseDependencies[ setIdxes[i][j] ] != NULL);
+
+      // This is legacy code, but I'll keep it anyway:
+      // ensure the values are different pointers (old code used to update
+      // the pointers directly instead of setting one of the two merged sets
+      // to NULL)
+      assert(spouseDependencies[ setIdxes[0][0] ] !=
+					spouseDependencies[ setIdxes[1][1] ]);
+      assert(spouseDependencies[ setIdxes[0][1] ] !=
 					  spouseDependencies[ setIdxes[1][0] ]);
-	// take the union such that spouses of each are contained in both
-	*spouseDependencies[ setIdxes[0][0] ] |=
-					  *spouseDependencies[ setIdxes[1][1] ];
-	*spouseDependencies[ setIdxes[0][1] ] |=
-					  *spouseDependencies[ setIdxes[1][0] ];
 
-	// intersection of these should be empty, otherwise there's
-	// inconsistencies and individuals that are meant to be different sexes
-	// simultaneously
-	if ((*spouseDependencies[ setIdxes[0][0] ] &
-				*spouseDependencies[ setIdxes[0][1] ]).any()) {
-	  fprintf(stderr, "ERROR: line %d in def: assigning %d and %d as parents is impossible due to\n",
-		  line, parIdx[0]+1, parIdx[1]+1);
-	  fprintf(stderr, "       other parent assignments: they necessarily have same sex\n");
-	  exit(4);
-	}
+      // take the union such that spouses of each are contained in both
+      spouseDependencies[ setIdxes[0][0] ]->insert(
+				  spouseDependencies[ setIdxes[1][1] ]->begin(),
+				  spouseDependencies[ setIdxes[1][1] ]->end());
+      spouseDependencies[ setIdxes[0][1] ]->insert(
+				  spouseDependencies[ setIdxes[1][0] ]->begin(),
+				  spouseDependencies[ setIdxes[1][0] ]->end());
 
-	// replace pointers stored in setIdxes[1][ 0,1 ] to those in
-	// setIdxes[0][ 0,1 ]. First free the objects already stored there, then
-	// update
-	for(int p = 0; p < 2; p++) {
-	  // replace all pointers to <spouseDependencies[ setIdxes[1][p] ]> to
-	  // point to <spouseDependencies[ setIdxes[0][ p^1 ] ]:
-	  boost::dynamic_bitset<> *indexesToReplace =
-					  spouseDependencies[ setIdxes[1][p] ];
-	  for(unsigned int samp = indexesToReplace->find_first();
-		  samp < indexesToReplace->size();
-		  samp = indexesToReplace->find_next(samp)) {
-	    spouseDependencies[ samp ] = spouseDependencies[ setIdxes[0][p^1] ];
-	  }
-
-	  delete indexesToReplace;
-	}
+      // intersection of these should be empty, otherwise there's
+      // inconsistencies and individuals that are meant to be different sexes
+      // simultaneously
+      if (intersectNonEmpty(*spouseDependencies[ setIdxes[0][0] ],
+			    *spouseDependencies[ setIdxes[0][1] ])) {
+	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d and branch %d from\n",
+		line, pars[0].branch+1, pars[0].gen+1, pars[1].branch+1);
+	fprintf(stderr, "       generation %d as parents is impossible due to other parent assignments:\n",
+		pars[1].gen+1);
+	fprintf(stderr, "       they necessarily have same sex\n");
+	exit(4);
       }
-      else {
-	// pointers already equal; ensure consistency among all sets:
-	// everything is already done:
-	assert(spouseDependencies[ setIdxes[0][1] ] ==
-					  spouseDependencies[ setIdxes[1][0] ]);
-	assert((*spouseDependencies[ setIdxes[0][0] ] &
-				*spouseDependencies[ setIdxes[0][1] ]).none());
+
+      // replace set values stored in sexConstraints to the newly merged set
+      // indexes
+      for(int p = 0; p < 2; p++) {
+	// update all set indexes for samples in
+	// <spouseDependencies[ setIdxes[1][p] ]> to setIdxes[0][ p^1 ];
+	set<Parent,ParentComp> *toUpdate = spouseDependencies[ setIdxes[1][p] ];
+	for(auto it = toUpdate->begin(); it != toUpdate->end(); it++)
+	  sexConstraints[ it->gen ][ it->branch ] = setIdxes[0][p^1];
+
+	delete toUpdate;
+	spouseDependencies[ setIdxes[1][p] ] = NULL;
       }
     }
   }
+}
+
+// Returns true if the intersection of <a> and <b> is non-empty
+bool intersectNonEmpty(set<Parent,ParentComp> &a, set<Parent,ParentComp> &b) {
+  // Similar to the std::set_intersection code
+  auto a_it = a.begin();
+  auto b_it = b.begin();
+  while(a_it != a.end() && b_it != b.end()) {
+    if (ParentComp()(*a_it, *b_it))
+      a_it++;
+    else if (ParentComp()(*b_it, *a_it))
+      b_it++;
+    else {
+      // have *a_it == *b_it, so intersection is non-empty:
+      return true;
+    }
+  }
+  return false;
 }
 
 // Simulate data for each specified pedigree type for the number of requested
@@ -1226,7 +1285,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     int *numBranches = simDetails[ped].numBranches;
-    int **branchParents = simDetails[ped].branchParents;
+    Parent **branchParents = simDetails[ped].branchParents;
     int **sexConstraints = simDetails[ped].sexConstraints;
     int i1Sex = simDetails[ped].i1Sex;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
@@ -1237,13 +1296,13 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     theSamples[ped] = new Person***[numFam];
     for (int fam = 0; fam < numFam; fam++) {
 
+      // ready to make sex assignments for this family
+      sexAssignments.clear();
+
       theSamples[ped][fam] = new Person**[numGen];
       for(int curGen = 0; curGen < numGen; curGen++) {
 
 	theSamples[ped][fam][curGen] = new Person*[ numBranches[curGen] ];
-
-	// ready to make assignments for this generaiton
-	sexAssignments.clear();
 
 	// allocate Persons for each branch of <curGen>, assign their sex,
 	// and do the simulation for these allocated individuals
@@ -1335,31 +1394,33 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    }
 
 	    if (numNonFounders == 0) {
-	      assert(curGen == 0 || branchParents[curGen][branch*2] == -1);
+	      assert(curGen == 0 ||
+				  branchParents[curGen][branch*2].branch == -1);
 	      continue; // no non-founders in first generation
 	    }
 
-	    assert(curGen > 0 && branchParents[curGen][branch*2] >= 0);
+	    assert(curGen > 0 && branchParents[curGen][branch*2].branch >= 0);
 
 	    // Now simulate the non-founders in <branch> of <curGen>
 	    //
 	    // First figure out who the parents are:
-	    int parBrch[2]; // which branch are the two parents in
-	    int parIdx[2];  // index of the Person in the branch?
+	    Parent pars[2];
+	    int parIdx[2];  // index of the Person in the branch
 	    for(int p = 0; p < 2; p++) {
-	      parBrch[p] = branchParents[curGen][branch*2 + p];
-	      if (parBrch[p] < 0) {
-		assert(p == 1);
+	      pars[p] = branchParents[curGen][branch*2 + p];
+	      if (pars[p].branch < 0) {
+		assert(p == 1 && pars[p].gen == curGen - 1);
 		// founders have negative indexes that start from -1, so we
 		// add 1 to get it to be 0 based and negate to get the index
-		parIdx[p] = -(parBrch[p] + 1);
-		parBrch[1] = parBrch[0];
+		parIdx[p] = -(pars[p].branch + 1);
+		pars[1].branch = pars[0].branch;
 	      }
 	      else {
 		// use "primary" person: immediately after all the spouses
 		int thisBranchNumSpouses;
 		if (branchNumSpouses[curGen-1])
-		  thisBranchNumSpouses =-branchNumSpouses[curGen-1][parBrch[p]];
+		  thisBranchNumSpouses =
+		      -branchNumSpouses[ pars[p].gen ][ pars[p].branch ];
 		else if (curGen == numGen - 1) // no spouses in last generation
 		  thisBranchNumSpouses = 0;
 		else                           // one spouse by default
@@ -1368,19 +1429,18 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	      }
 	    }
 
-	    Person **prevGenSamps = theSamples[ped][fam][curGen-1];
-	    Person **curGenSamps = theSamples[ped][fam][curGen];
+	    Person ***curFamSamps = theSamples[ped][fam];
 	    // the non-founders are stored just after the founders
 	    for(int ind = numFounders; ind < numPersons; ind++) {
 	      // If we're using sex-specific maps, the two parents' sexes should
 	      // differ
 	      if (sexSpecificMaps) {
-		assert(prevGenSamps[ parBrch[0] ][ parIdx[0] ].sex !=
-				   prevGenSamps[ parBrch[1] ][ parIdx[1] ].sex);
+		assert(curFamSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex !=
+		       curFamSamps[ pars[1].gen ][ pars[1].branch ][ parIdx[1] ].sex);
 	      }
 
 	      for(int p = 0; p < 2; p++) { // meioses from each parent index <p>
-		Person &theParent = prevGenSamps[ parBrch[p] ][ parIdx[p] ];
+		Person &theParent = curFamSamps[ pars[p].gen ][ pars[p].branch ][ parIdx[p] ];
 
 		int hapIdx; // haplotype index for the simulated sample
 		if (sexSpecificMaps)
@@ -1389,8 +1449,9 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		else
 		  hapIdx = p;
 
-		curGenSamps[branch][ind].haps[hapIdx].emplace_back();
-		generateHaplotype(curGenSamps[branch][ind].haps[hapIdx].back(),
+		// Make space for this haplotype in the current sample:
+		curFamSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
+		generateHaplotype(curFamSamps[curGen][branch][ind].haps[hapIdx].back(),
 				  theParent, curMap, coIntf, chrIdx);
 	      } // <parIdx> (simulate each transmitted haplotype)
 	    } // <ind>
@@ -1407,9 +1468,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 // Returns (via parameters) the number of founders and non-founders in the given
 // generation and branch.
 void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
-		     int **branchParents, int **branchNumSpouses,
+		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders) {
-  if (curGen > 0 && branchParents[curGen][branch*2] >= 0) { // have parent(s)?
+  if (curGen > 0 &&
+      branchParents[curGen][branch*2].branch >= 0) { // have parent(s)?
     numNonFounders = numSampsToRetain[curGen];
     if (numNonFounders == 0)
       // not saving, but need parent of next generation: the "primary" person
@@ -1426,7 +1488,7 @@ void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
       numFounders = -branchNumSpouses[curGen][branch];
   }
   else {
-    assert(curGen == 0 || branchParents[curGen][branch*2 + 1] == -1);
+    assert(curGen == 0 || branchParents[curGen][branch*2 + 1].branch == -1);
 
     // no parents, so only founders in this branch
     numNonFounders = 0;
@@ -1568,7 +1630,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     int *numBranches = simDetails[ped].numBranches;
-    int **branchParents = simDetails[ped].branchParents;
+    Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
     char *pedName = simDetails[ped].name;
 
@@ -1898,7 +1960,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int numGen = simDetails[ped].numGen;
 	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
 	int *numBranches = simDetails[ped].numBranches;
-	int **branchParents = simDetails[ped].branchParents;
+	Parent **branchParents = simDetails[ped].branchParents;
 	int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 	char *pedName = simDetails[ped].name;
 
@@ -1935,7 +1997,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		      fileOrGZ_printf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1,
 					   gen+1, branch+1, indNum + 1);
 		    if (idOut &&
-			(gen == 0 || branchParents[gen][branch*2] < 0)) {
+			(gen == 0 || branchParents[gen][branch*2].branch < 0)) {
 		      assert(indNum == 0);
 		      curIsFounder = true;
 		      fprintf(idOut, "%s%d_g%d-b%d-i%d", pedName, fam+1,
@@ -2087,7 +2149,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       int numGen = simDetails[ped].numGen;
       int *numSampsToRetain = simDetails[ped].numSampsToRetain;
       int *numBranches = simDetails[ped].numBranches;
-      int **branchParents = simDetails[ped].branchParents;
+      Parent **branchParents = simDetails[ped].branchParents;
       int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
       for(int fam = 0; fam < numFam; fam++)
@@ -2196,16 +2258,13 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
     int numGen = simDetails[ped].numGen;
     int *numSampsToRetain = simDetails[ped].numSampsToRetain;
     int *numBranches = simDetails[ped].numBranches;
-    int **branchParents = simDetails[ped].branchParents;
+    Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
     char *pedName = simDetails[ped].name;
 
     for(int fam = 0; fam < numFam; fam++) {
+      Person ***curFamSamps = theSamples[ped][fam];
       for(int gen = 0; gen < numGen; gen++) {
-	Person **prevGenSamps = NULL;
-	if (gen > 0)
-	  prevGenSamps = theSamples[ped][fam][gen-1];
-
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
 	  int numNonFounders, numFounders;
 	  getPersonCounts(gen, numGen, branch, numSampsToRetain, branchParents,
@@ -2238,25 +2297,26 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      fprintf(out, "0 0 ");
 	    }
 	    else {
-	      int parBrch[2]; // which branch are the two parents in
+	      Parent pars[2]; // which branch are the two parents in
 	      int parIdx[2];  // index of the Person in the branch?
 	      // Is the corresponding parent a spouse of a "primary" individual?
 	      bool isSpouse[2] = { false, false };
 	      for(int p = 0; p < 2; p++) {
-		parBrch[p] = branchParents[gen][branch*2 + p];
-		if (parBrch[p] < 0) {
+		pars[p] = branchParents[gen][branch*2 + p];
+		if (pars[p].branch < 0) {
 		  assert(p == 1);
 		  // founders have negative indexes that start from -1, so we
 		  // add 1 to get it to be 0 based and negate to get the index
-		  parIdx[p] = -(parBrch[p] + 1);
-		  parBrch[1] = parBrch[0];
+		  parIdx[p] = -(pars[p].branch + 1);
+		  pars[1].branch = pars[0].branch;
 		  isSpouse[p] = true;
 		}
 		else {
 		  // use "primary" person: immediately after all the spouses
 		  int thisBranchNumSpouses;
 		  if (branchNumSpouses[gen-1])
-		    thisBranchNumSpouses = -branchNumSpouses[gen-1][parBrch[p]];
+		    thisBranchNumSpouses =
+			    -branchNumSpouses[ pars[p].gen ][ pars[p].branch ];
 		  else if (gen == numGen - 1) // no spouse in last generation
 		    thisBranchNumSpouses = 0;
 		  else                        // one spouse by default
@@ -2265,7 +2325,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		}
 	      }
 
-	      int par0sex = prevGenSamps[ parBrch[0] ][ parIdx[0] ].sex;
+	      int par0sex = curFamSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex;
 	      for(int p = 0; p < 2; p++) {
 		// print parent 0 first by default, but if parent 0 is female,
 		// the following will switch and print parent 1 first
@@ -2273,10 +2333,11 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		if (!isSpouse[ printPar ])
 		  // must be the primary person, so i1:
 		  fprintf(out, "%s%d_g%d-b%d-i1 ", pedName, fam+1,
-			  gen, parBrch[ printPar ]+1);
+			  pars[ printPar ].gen+1, pars[ printPar ].branch+1);
 		else
 		  fprintf(out, "%s%d_g%d-b%d-s%d ", pedName, fam+1,
-			  gen, parBrch[ printPar ]+1, parIdx[ printPar ]+1);
+			  pars[ printPar ].gen+1, pars[ printPar ].branch+1,
+			  parIdx[ printPar ]+1);
 	      }
 	    }
 
