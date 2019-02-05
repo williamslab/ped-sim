@@ -49,7 +49,7 @@ below. Run `ped-sim` without arguments to see a full listing of options. This
 document describes all options with the non-required options described at the
 end.
 
-<!--TODO: give example; want to make small VCF with HapMap samples for this-->
+<!--TODO: give example; want to make small VCF with 1kG samples for this-->
 
 ------------------------------------------------------
 
@@ -110,12 +110,12 @@ to 0 so that no individuals are printed in generations that are not explicitly
 listed. All individuals in a given branch and given generation have the same
 parents and so are full siblings of one another. Because only one member of
 each branch can have children, setting this to a value greater than 1 generates
-data for individuals that do not have any offspring. To simulate a pedigree in
+data for individuals that do not have any offspring. **To simulate a pedigree in
 which multiple full siblings each have children, increase the number of
-branches in the third `<#branches>` field. Note that any spouses of the person
-who does have children in a branch are always printed if this field is greater
-than 0. These spouses do not count in the value of this field: the value
-indicates how many full siblings to generate for a given branch; if it is
+branches in the third `<#branches>` field.** Note that any _founder_ spouses of
+the person who does have children in a branch are always printed if this field
+is greater than 0. These spouses do not count in the value of this field: the
+value indicates how many full siblings to generate for each branch; if it is
 non-zero, that number of siblings and any spouses will be printed. Also note
 that if a branch contains a founder individual (such as in generation 1), it
 will only ever contain one individual (and any spouses of that person): the
@@ -158,41 +158,49 @@ The above are defaults, and the parents of a branch can be specified using the
 parent specification entry.
 
 `<parent_specifications>` is optional. The default parent assignments are given
-above. The format of the specifications is:
+above. The format of the specifications is any of:
 
-    [current_branches]:<[parent_branch1]<_[parent_branch2]>>
+    [current_branches]:
+    [current_branches]:[parent_branch1]
+    [current_branches]:[parent_branch1]_[parent_branch2]
+    [current_branches]:[parent_branch1]_[parent_branch2]^[parent_branch2_generation]
 
 Here `[current_branches]` contains a range of branches from the current
-generation whose parents are specified after the ':' character. This can be
+generation whose parents are specified after the `:` character. This can be
 a single branch or comma separated list of branches such as `1,2,3` or, for a
 contiguous range you can use a hyphen as in `1-3`. Any combination of
 contiguous ranges and comma separated sets of branches are allowed such as
 `2-5,7,9-10`.
 
 If no text appears after the ':', the indicated branches will contain founder
-individuals. For example, `1-3,5:` indicates that branches 1 through 3 and 5
+individuals. For example, `1-3,5:` specifies that branches 1 through 3 and 5
 should contain founders.
 
-Currently the parents are required to be either founders or individuals from
-the previous generation. Thus in generation *g* > 1, each parent must be from
-generation *g-1* or be founders.
-
 If only `[parent_branch1]` is listed, the reproducing parent from that
-branch has children with a founder spouse. So for example, `1,7:2` indicates
-that branches 1 and 7 will be the children of an individual from branch 2 in
-the previous generation and a founder spouse. Because these branches are listed
-together, they will contain full siblings. To generate these branches as
-half-sibling children of branch 2 the specification should be `1:2 7:2`.
-Here, branch 2 contains the parent of both individuals, but the separate
-specifications for branches 1 and 7 ensures that that parent has children with
-two different founder spouses, making the children in the branches
-half-siblings.
+branch in the previous generation has children with a founder spouse. So for
+example, `1,7:2` indicates that branches 1 and 7 will be the children of an
+individual from branch 2 in the previous generation and a founder spouse.
+Because these branches are listed together, they will contain full siblings.
+To generate these branches as half-sibling children of branch 2 the
+specification should be `1:2 7:2`. Here, branch 2 contains the parent of both
+individuals, but the separate specifications for branches 1 and 7 ensures that
+that parent has children with two different founder spouses, making the
+children in the branches half-siblings.
 
-If two parents are listed as in `[parent_branch1]_[parent_branch2]`, the two
-reproducing parents in the indicated branches (from the previous generation)
-have children. Thus, for example, `2,4:1_3` indicates that branches 2 and 4
-from the current generation are to be the children of the reproducing parents
-in branches 1 and 3 in the previous generation.
+If two parent branches are listed as in `[parent_branch1]_[parent_branch2]`,
+the two reproducing parents are from the indicated branches in the previous
+generation. Thus, for example, `2,4:1_3` indicates that branches 2 and 4 from
+the current generation are to be the children of the reproducing parents in
+branches 1 and 3 in the previous generation.
+
+To have parents from different generations, the format is
+`[parent_branch1]_[parent_branch2]^[parent_branch2_generation]`. Here, one
+parent (the first one listed) is required to be in the previous generation and
+the second parent comes from some other generation. Because the children are in
+the current generation, the generation of both parents must be earlier than the
+current one. As an example `2:1_3^2` indicates that branch 2 in the current
+generation has parents from branch 1 in the previous generation and branch
+3 from generation 2.
 
 The simulator keeps track of the constraints on the sex of the parents implied
 by the requested matings and will give an error if it is not possible to assign
