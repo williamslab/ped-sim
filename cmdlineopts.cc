@@ -22,6 +22,7 @@ unsigned int CmdLineOpts::randSeed;
 double CmdLineOpts::genoErrRate = 1e-3;
 double CmdLineOpts::homErrRate = 0;
 double CmdLineOpts::missRate = 1e-3;
+double CmdLineOpts::pseudoHapRate = 0.0;
 int    CmdLineOpts::keepPhase = 0;
 int    CmdLineOpts::retainExtra = 0;
 int    CmdLineOpts::printFounderIds = 0;
@@ -35,6 +36,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     ERR_RATE,
     ERR_HOM_RATE,
     MISS_RATE,
+    PSEUDO_HAP_RATE,
   };
 
   // This is a local variable because whenever <interfereFile> is NULL, the
@@ -53,6 +55,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"err_rate", required_argument, NULL, ERR_RATE},
     {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
     {"miss_rate", required_argument, NULL, MISS_RATE},
+    {"pseudo_hap", required_argument, NULL, PSEUDO_HAP_RATE},
     {0, 0, 0, 0}
   };
 
@@ -61,6 +64,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   int c;
 
   bool haveGoodArgs = true;
+  bool setMissRate = false;
 
   char optstring[80] = "d:m:i:o:";
   while ((c = getopt_long(argc, argv, optstring, longopts, &optionIndex))
@@ -143,6 +147,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	break;
       case MISS_RATE:
 	missRate = strtod(optarg, &endptr);
+	setMissRate = true;
 	if (errno != 0 || *endptr != '\0') {
 	  fprintf(stderr, "ERROR: unable to parse --miss_rate argument as floating point value\n");
 	  if (errno != 0)
@@ -150,6 +155,21 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	  exit(2);
 	}
 	if (missRate < 0 || missRate > 1) {
+	  fprintf(stderr, "ERROR: --miss_rate value must be between 0 and 1\n");
+	  exit(5);
+	}
+	break;
+      case PSEUDO_HAP_RATE:
+	pseudoHapRate = strtod(optarg, &endptr);
+	if (!setMissRate)
+	  missRate = 0.0;
+	if (errno != 0 || *endptr != '\0') {
+	  fprintf(stderr, "ERROR: unable to parse --pseudo_hap argument as floating point value\n");
+	  if (errno != 0)
+	    perror("strtod");
+	  exit(2);
+	}
+	if (pseudoHapRate < 0 || pseudoHapRate > 1) {
 	  fprintf(stderr, "ERROR: --miss_rate value must be between 0 and 1\n");
 	  exit(5);
 	}
@@ -198,6 +218,13 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     haveGoodArgs = false;
   }
 
+  if (missRate > 0 && pseudoHapRate > 0) {
+    if (haveGoodArgs)
+      fprintf(stderr, "\n");
+    fprintf(stderr, "ERROR: can only use --miss_rate or --pseudo_hap for missingness, not both\n");
+    haveGoodArgs = false;
+  }
+
   if (!haveGoodArgs) {
     printUsage(stderr, argv[0]);
   }
@@ -234,6 +261,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
   fprintf(out, "\t\t\t  genotyping error at the marker (default 0)\n");
   fprintf(out, "  --miss_rate <#>\tmissingness rate (default 1e-3; 0 disables)\n");
+  fprintf(out, "  --pseudo_hap <#>\trate of pseudo-haploid sites; all other sites missing\n");
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
   fprintf(out, "\n");

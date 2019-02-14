@@ -202,8 +202,10 @@ int main(int argc, char **argv) {
 	    CmdLineOpts::genoErrRate);
     fprintf(outs[o], "  Opposite homozygous error rate:\t%.2lf\n",
 	    CmdLineOpts::homErrRate);
-    fprintf(outs[o], "  Missingness rate:\t%.1le\n\n",
+    fprintf(outs[o], "  Missingness rate:\t%.1le\n",
 	    CmdLineOpts::missRate);
+    fprintf(outs[o], "  Pseudo-haploid rate:\t%.1lg\n\n",
+	    CmdLineOpts::pseudoHapRate);
 
     if (CmdLineOpts::retainExtra < 0) {
       fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
@@ -1815,6 +1817,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bernoulli_distribution genoErr( CmdLineOpts::genoErrRate );
   bernoulli_distribution homErr( CmdLineOpts::homErrRate );
   bernoulli_distribution setMissing( CmdLineOpts::missRate );
+  bernoulli_distribution isPseudoHap( CmdLineOpts::pseudoHapRate );
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
@@ -2183,6 +2186,22 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  }
 		  assert(curHap.front().endPos >= pos);
 		  curFounderHaps[h] = curHap.front().foundHapNum;
+		}
+
+		// make this a pseudo haploid genotype?
+		if (CmdLineOpts::pseudoHapRate > 0) {
+		  if (isPseudoHap( randomGen )) {
+		    // pseudo-haploid; pick one haplotype to print
+		    int printHap = coinFlip(randomGen);
+		    for(int h = 0; h < 2; h++)
+		      fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
+				      founderHaps[ curFounderHaps[printHap] ]);
+		  }
+		  else { // not pseudo-haploid => both alleles missing:
+		    for(int h = 0; h < 2; h++)
+		      fileOrGZ_printf(out, "%c.", betweenAlleles[h]);
+		  }
+		  continue;
 		}
 
 		// genotyping error?

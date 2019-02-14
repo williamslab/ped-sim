@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.99.2"
-#define RELEASE_DATE	" 5 Feb 2019"
+#define VERSION_NUMBER	"0.99.3"
+#define RELEASE_DATE	"14 Feb 2019"
 
 class CmdLineOpts {
   public:
@@ -52,8 +52,11 @@ class CmdLineOpts {
     // Rate of opposite homozygous genotyping errors
     static double homErrRate;
 
-    // Rate of missingness
+    // Rate of missingness. Mutually exclusive with pseudoHapRate
     static double missRate;
+
+    // Rate of pseudo-haploid-ity. Mutually exclusive with missRate
+    static double pseudoHapRate;
     
     // Keep phase information in output VCF?
     static int keepPhase;

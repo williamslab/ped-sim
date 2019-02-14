@@ -25,6 +25,7 @@ Table of Contents
          * [Genotyping error rate](#genotyping-error-rate---err_rate-)
          * [Rate of opposite homozygote errors](#rate-of-opposite-homozygote-errors---err_hom_rate-)
          * [Missingness rate](#missingness-rate---miss_rate-)
+         * [Pseudo-haploid rate](#pseudo-haploid-rate---pseudo_hap-)
          * [Maintaining phase in output](#maintaining-phase-in-output---keep_phase)
          * [Listing input sample ids used as founders](#listing-input-sample-ids-used-as-founders---founder_ids)
          * [Retaining extra input samples](#retaining-extra-input-samples---retain_extra-)
@@ -561,8 +562,22 @@ As real data includes missingness, the simulator introduces missing genotype
 calls at a rate specified by this parameter, with a default of 5e-3. Set this
 value to 0 for no missing genotypes.
 
+Can only use `--miss_rate` or `--pseudo_hap` not both.
+
 **Note: only pedigree samples have sites set to missing; `--retain_extra`
 samples maintain their original calls**
+
+### Pseudo-haploid rate: `--pseudo_hap <#>`
+
+The `--pseudo_hap` option generates pseudo-haploid data with the rate of (fully)
+missing data given by the argument (e.g., `--pseudo_hap .1` will have 10% of
+sites completely missing data). Sites that do have data are all haploid for a
+random allele sampled from the two original ones.
+
+Can only use `--miss_rate` or `--pseudo_hap` not both.
+
+**Note: only pedigree samples have sites set to missing or pseudo-haploid;
+`--retain_extra` samples maintain their original calls**
 
 ### Maintaining phase in output: `--keep_phase`
 
