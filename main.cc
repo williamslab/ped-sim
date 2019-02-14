@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
   // seed random number generator if needed
   if (CmdLineOpts::autoSeed) {
     CmdLineOpts::randSeed = random_device().entropy();
-    if (CmdLineOpts::randSeed == 0 && random_device().entropy() == 0) {
+    if (CmdLineOpts::randSeed == random_device().entropy()) {
       // random_device is not a real random number generator: fall back on
       // using time to generate a seed:
       timeval tv;
