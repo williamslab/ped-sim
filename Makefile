@@ -1,6 +1,7 @@
 CPPSRCS= main.cc cmdlineopts.cc cointerfere.cc
 CSRCS= memcpy.c
-OBJS= $(patsubst %.cc,%.o,$(CPPSRCS)) $(patsubst %.c,%.o,$(CSRCS))
+CPPOBJS= $(patsubst %.cc,%.o,$(CPPSRCS))
+COBJS= $(patsubst %.c,%.o,$(CSRCS))
 EXEC= ped-sim
 
 GPP = g++
@@ -30,12 +31,12 @@ df = $(DEPDIR)/$(*F)
 
 all: $(EXEC)
 
-$(EXEC): $(OBJS) $(HEADERS)
-	$(GPP) -o $(EXEC) $(OBJS) $(CFLAGS) $(LIBS)
+$(EXEC): $(CPPOBJS) $(HEADERS)
+	$(GPP) -o $(EXEC) $(CPPOBJS) $(CFLAGS) $(LIBS)
 
 # for minimal dependencies on libraries:
-distribute: $(OBJS) $(HEADERS)
-	$(GPP) -o $(EXEC) $(OBJS) $(CFLAGS) $(LIBS) -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
+distribute: $(CPPOBJS) $(COBJS) $(HEADERS)
+	$(GPP) -o $(EXEC) $(CPPOBJS) $(COBJS) $(CFLAGS) $(LIBS) -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
 
 
 # This way of building dependencies (per-file) described at
@@ -68,7 +69,7 @@ tags: $(SRCS) *.h
 	ctags --language-force=c++ --extra=+q --fields=+i --excmd=n *.c *.cc *.h
 
 clean:
-	rm -f $(EXEC) $(OBJS)
+	rm -f $(EXEC) $(CPPOBJS) $(COBJS)
 
 clean-deps:
 	rm -f $(DEPDIR)/*.P
