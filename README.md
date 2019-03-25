@@ -551,15 +551,15 @@ we are unaware of a study that looks at error rates by "true" genotype class in
 SNP array data, the `--err_hom_rate` option provides the ability to produce
 different rates of errors for genotypes that are truly homozygous. The default
 rate for generating an erroneous genotype that is homozygous for the opposite
-alleles relative to the truth is 0.1. That is, when a homozygous genotype is
-set to an erroneous value, 10% of the time it is set homozygous for the opposite
-allele, and 90% of the time is heterozygous. For equal rates of both these
-classes, set the rate for this option to .5.
+alleles relative to the truth is 0, so errors at homozygous genotypes produce a heterozygote. If set to, say, .1, when a homozygous genotype is set to an
+erroneous value, 10% of the time it is set homozygous for the opposite allele,
+and 90% of the time is heterozygous. For equal rates of both these classes, set
+the rate for this option to .5.
 
 ### Missingness rate: `--miss_rate <#>`
 
 As real data includes missingness, the simulator introduces missing genotype
-calls at a rate specified by this parameter, with a default of 5e-3. Set this
+calls at a rate specified by this parameter, with a default of 1e-3. Set this
 value to 0 for no missing genotypes.
 
 Can only use `--miss_rate` or `--pseudo_hap` not both.
