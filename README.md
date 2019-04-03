@@ -59,7 +59,7 @@ for generating a sex-specific map.
 2. Run Ped-sim:
 
         ./ped-sim -d example/second_deg.def -m refined_mf.simmap -i /dev/null \
-	  -o output --intf interfere/nu_p_campbell.tsv
+          -o output --intf interfere/nu_p_campbell.tsv
 
 This uses the [below](#map-file) genetic map, [human crossover interference
 parameters](https://www.nature.com/articles/ncomms7260) stored here in
