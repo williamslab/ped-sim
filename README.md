@@ -50,7 +50,22 @@ below. Run `ped-sim` without arguments to see a full listing of options. This
 document describes all options with the non-required options described at the
 end.
 
-<!--TODO: give example; want to make small VCF with 1kG samples for this-->
+### Quick start
+
+To use Ped-sim to simulate from `example/second_deg.def`:
+
+1. Obtain a genetic map. For humans, see [below](#map-file) for links and code
+for generating a sex-specific map.
+2. Run Ped-sim:
+    ./ped-sim -d example/second_deg.def -m refined_mf.simmap -i /dev/null -o output --intf interfere/nu_p_campbell.tsv
+
+This uses the [below](#map-file) genetic map, [human crossover interference
+parameters](https://www.nature.com/articles/ncomms7260) stored here in
+`interfere/`, and uses `/dev/null` in place of an input VCF file so includes no
+genetic data. If your OS lacks `/dev/null`, create an empty file to pass in for
+the `-i` parameter. The `output.bp` file is the primary result of this run; it
+records which samples carry each haplotype. This is not the same as IBD
+segments, and we will be adding the generation of these segments later.
 
 ------------------------------------------------------
 
@@ -337,7 +352,7 @@ female parents.
 `<map_position1>` is likewise a genetic position in centiMorgans and should
 correspond to the female genetic position if given.
 
-A high resolution sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
+A high resolution human sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
 and is described in [Bhérer, et al. 2017](http://dx.doi.org/10.1038/ncomms14994).
 To generate a map file in the format the simulator requires with both male and
 female genetic positions, run the following bash commands:
