@@ -72,7 +72,7 @@ Def file
 
 The def file describes the pedigree structure(s) to be simulated. Comments are
 allowed on a line by themselves beginning with #. Example def files are in the
-`example` directory, and a description of the two example files is below.
+`example` directory, and a description of the three example files is below.
 
 The first line of a pedigree specification contains four columns:
 
@@ -209,44 +209,6 @@ sexes necessary to have offspring. For example, `1:1_3 2:1_4 3:3_4` is
 impossible since the reproducing individuals in branches 3 and 4 must be the
 same sex in order to both have children with the individual in branch 1.
 
-### Example def file: `example/full_half_1st_2nd_cousins.def`
-
-The first entry in the `example/full_half_1st_2nd_cousin.def` file simulates
-a single pedigree that has four generations:
-
-    def full1-2-cous 1 4
-    3 0 4
-    4 1
-
-Because the first two generations are not explicitly listed, they have the
-default number of branches: one and two for generations 1 and 2, respectively.
-Since the number of samples to print is 0 by default, no samples are printed
-from these generations.  In generation 3, there are four branches, with
-generation 2, branch 1 a parent (along with a founder spouse) of branches 1 and
-2, and generation 2, branch 2 a parent (with a founder spouse) of branches 3
-and 4.  No samples from generation 3 are printed. Finally, generation 4 has
-four branches, the same as the previous generation, with one sample printed per
-branch, or a total of four individuals printed. Because the four branches in
-generation 3 included two sets of full siblings, two pairs of the four samples
-in generation 4 are first cousins. The other pairs are second cousins, and
-their most recent common ancestors are in generation 1.
-
-The second entry in this file is very similar to the first:
-
-    def half1-2-cous 1 4
-    2 0 2 1:1 2:1
-    3 0 4
-    4 1
-
-The only difference between this pedigree and the one above is in generation 2.
-This generation once again has two branches, and each branch has the
-reproducing individual from generation 1, branch 1 as one of their parents.
-However, because the specification is separated for the two branches and
-includes only branch number 1, these branches are the offspring of two
-different founders and are thus half-siblings. In consequence, the ultimate
-descendants in generation 4 are a mix of (full) first cousins and half-second
-cousins.
-
 ### Example def file: `example/second_deg.def`
 
 The first entry in the `example/second_deg.def` file simulates 10 pedigrees
@@ -306,6 +268,51 @@ child of individuals from generation 2, branches 2 and 4. As the individuals in
 branches 1 and 2 are full siblings and those in branches 3 and 4 are also full
 siblings, the third generation samples are "double cousins." Only these
 two double cousin individuals from the last generation are printed.
+
+### Example def file: `example/full_half_1st_2nd_cousins.def`
+
+The first entry in the `example/full_half_1st_2nd_cousin.def` file simulates
+a single pedigree that has four generations:
+
+    def full1-2-cous 1 4
+    3 0 4
+    4 1
+
+Because the first two generations are not explicitly listed, they have the
+default number of branches: one and two for generations 1 and 2, respectively.
+Since the number of samples to print is 0 by default, no samples are printed
+from these generations.  In generation 3, there are four branches, with
+generation 2, branch 1 a parent (along with a founder spouse) of branches 1 and
+2, and generation 2, branch 2 a parent (with a founder spouse) of branches 3
+and 4.  No samples from generation 3 are printed. Finally, generation 4 has
+four branches, the same as the previous generation, with one sample printed per
+branch, or a total of four individuals printed. Because the four branches in
+generation 3 included two sets of full siblings, two pairs of the four samples
+in generation 4 are first cousins. The other pairs are second cousins, and
+their most recent common ancestors are in generation 1.
+
+The second entry in this file is very similar to the first:
+
+    def half1-2-cous 1 4
+    2 0 2 1:1 2:1
+    3 0 4
+    4 1
+
+The only difference between this pedigree and the one above is in generation 2.
+This generation once again has two branches, and each branch has the
+reproducing individual from generation 1, branch 1 as one of their parents.
+However, because the specification is separated for the two branches and
+includes only branch number 1, these branches are the offspring of two
+different founders and are thus half-siblings. In consequence, the ultimate
+descendants in generation 4 are a mix of (full) first cousins and half-second
+cousins.
+
+### Example def file: `example/cousins-1st_half_to_3rd.def`
+
+The `example/cousins-1st_half_to_3rd.def` def file includes five types of
+pedigrees producing first cousins, half-first cousins, second cousins,
+half-second cousins, and third cousins. The comments in the file include some
+documentation of these pedigree specifications.
 
 ------------------------------------------------------
 

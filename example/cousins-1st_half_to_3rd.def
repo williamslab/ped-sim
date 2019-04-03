@@ -1,0 +1,54 @@
+# FIRST cousins
+#
+# Generates 10 pedigrees with three generations.
+# With no specifications for generations 1 and 2, the defaults apply, and
+# generation 2 has 2 branches. Those branches contain full sibling children
+# of the parents in generation 1.
+# Because generation 3 does not include a branch count, it has the same number
+# of branches as generation 2, or 2 branches.
+# Those branches each contain children of the corresponding branches in
+# generation 2, resulting in first cousins. Note that because the definition
+# calls for printing of 1 sample (per branch), this produces a single pair of
+# first cousins per replicate pedigree.
+#
+def cousin_1_full 10 3
+3 1
+
+# HALF-FIRST COUSINS
+#
+# This calls for a nearly identical pedigree to the full first cousin pedigree
+# above. There is only one difference: generation 2 calls for different spouses
+# to be parents of the two branches. Thus those generation 2 branches contain
+# a pair of half-siblings. This therefore yields half-first cousins.
+#
+def cousin_1_half 10 3
+2 0 2   1:1  2:1
+3 1
+
+
+# SECOND COUSINS
+#
+# Nearly identical to the first cousin pedigree. The difference is this
+# pedigree is across four generations and therefore results in second cousins.
+# As indicated in the documentation, generations 2-4 all have 2 branches
+# because none of them specify something besides this default.
+#
+def cousin_2_full 10 4
+4 1
+
+# HALF-SECOND COUSINS
+#
+# Similar to half-first cousins, but produces half-second cousins because it
+# calls for 4 generations.
+#
+def cousin_2_half 10 4
+2 0 2   1:1  2:1
+4 1
+
+# THIRD COUSINS
+#
+# Also similar to the first (and second) cousin pedigrees. Because this
+# specifies 5 generations, it gives a pair of third cousins.
+#
+def cousin_3_full 10 5
+5 1
