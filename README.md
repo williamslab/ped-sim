@@ -57,6 +57,7 @@ To use Ped-sim to simulate from `example/second_deg.def`:
 1. Obtain a genetic map. For humans, see [below](#map-file) for links and code
 for generating a sex-specific map.
 2. Run Ped-sim:
+
     ./ped-sim -d example/second_deg.def -m refined_mf.simmap -i /dev/null -o output --intf interfere/nu_p_campbell.tsv
 
 This uses the [below](#map-file) genetic map, [human crossover interference
