@@ -87,6 +87,13 @@ struct Person {
   vector<Haplotype> haps[2]; // haplotype pair for <this>
 };
 
+struct fileOrGZ {
+  FILE *fp;
+  gzFile gfp;
+  bool isGZ;
+};
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Function decls
 void readDef(vector<SimDetails> &simDetails, char *defFile);
@@ -120,6 +127,9 @@ void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
 		       vector<COInterfere> &coIntf, unsigned int chrIdx);
+int getBranchNumSpouses(SimDetails &pedDets, int gen, int branch);
+bool printSampleId(FILE *out, SimDetails &pedDets, int fam, int gen, int branch,
+		   int ind, bool printAllGens = false, fileOrGZ *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
@@ -131,22 +141,16 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      char *famFile);
 template<typename T>
 void pop_front(vector<T> &vec);
-
-mt19937 randomGen;
-uniform_int_distribution<int> coinFlip(0,1);
-exponential_distribution<double> crossoverDist(1.0);
-
-struct fileOrGZ {
-  FILE *fp;
-  gzFile gfp;
-  bool isGZ;
-};
-
 bool fileOrGZ_open(fileOrGZ &fgz, const char *filename, const char *mode,
 		   bool isGZ);
 int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz);
 int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...);
 int fileOrGZ_close(fileOrGZ &fgz);
+
+
+mt19937 randomGen;
+uniform_int_distribution<int> coinFlip(0,1);
+exponential_distribution<double> crossoverDist(1.0);
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1616,6 +1620,51 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   }
 }
 
+// Returns the number of spouses a given generation <gen> and <branch> has
+int getBranchNumSpouses(SimDetails &pedDets, int gen, int branch) {
+  if (pedDets.branchNumSpouses[gen])
+    return -pedDets.branchNumSpouses[gen][branch];
+  else if (gen == pedDets.numGen - 1) // no spouses in last generation
+    return 0;
+  else // one spouse by default
+    return 1;
+}
+
+// Prints the sample id of the given sample to <out>.
+// Returns true if the sample is a founder, false otherwise.
+bool printSampleId(FILE *out, SimDetails &pedDets, int fam, int gen, int branch,
+		   int ind, bool printAllGens, fileOrGZ *gzOut) {
+  int thisBranchNumSpouses = getBranchNumSpouses(pedDets, gen, branch);
+  bool shouldPrint = pedDets.numSampsToRetain[gen] > 0 || printAllGens;
+
+  if (ind < thisBranchNumSpouses) {
+    if (shouldPrint) {
+      if (!gzOut)
+	fprintf(out, "%s%d_g%d-b%d-s%d", pedDets.name, fam+1, gen+1, branch+1,
+		ind+1);
+      else
+	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-s%d", pedDets.name, fam+1,
+			gen+1, branch+1, ind+1);
+    }
+    return true; // is a founder
+  }
+  else {
+    if (shouldPrint) {
+      if (!gzOut)
+	fprintf(out, "%s%d_g%d-b%d-i%d", pedDets.name, fam+1, gen+1, branch+1,
+		ind - thisBranchNumSpouses + 1);
+      else
+	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-i%d", pedDets.name, fam+1,
+			gen+1, branch+1, ind - thisBranchNumSpouses + 1);
+    }
+    if (gen == 0 || pedDets.branchParents[gen][branch*2].branch < 0) {
+      assert(ind - thisBranchNumSpouses == 0);
+      return true; // is a founder
+    }
+    return false;
+  }
+}
+
 // Print the break points to <outFile>
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
@@ -1634,7 +1683,6 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
-    char *pedName = simDetails[ped].name;
 
     for(int fam = 0; fam < numFam; fam++) {
       for(int gen = 0; gen < numGen; gen++) {
@@ -1649,20 +1697,8 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	    for(int ind = 0; ind < numPersons; ind++) {
 	      for(int h = 0; h < 2; h++) {
 		int sex = theSamples[ped][fam][gen][branch][ind].sex;
-		int thisBranchNumSpouses;
-		if (branchNumSpouses[gen])
-		  thisBranchNumSpouses = -branchNumSpouses[gen][branch];
-		else if (gen == numGen - 1) // no spouses in last generation
-		  thisBranchNumSpouses = 0;
-		else                        // one spouse by default
-		  thisBranchNumSpouses = 1;
-		if (ind < thisBranchNumSpouses)
-		  fprintf(out, "%s%d_g%d-b%d-s%d s%d h%d", pedName, fam+1,
-			  gen+1, branch+1, ind+1, sex, h);
-		else
-		  fprintf(out, "%s%d_g%d-b%d-i%d s%d h%d", pedName, fam+1,
-			  gen+1, branch+1, ind - thisBranchNumSpouses + 1,
-			  sex, h);
+		printSampleId(out, simDetails[ped], fam, gen, branch, ind);
+		fprintf(out, " s%d h%d", sex, h);
 
 		for(unsigned int chr = 0; chr < geneticMap.size(); chr++) {
 		  // print chrom name and starting position
@@ -1965,7 +2001,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	int *numBranches = simDetails[ped].numBranches;
 	Parent **branchParents = simDetails[ped].branchParents;
 	int **branchNumSpouses = simDetails[ped].branchNumSpouses;
-	char *pedName = simDetails[ped].name;
 
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int gen = 0; gen < numGen; gen++)
@@ -1977,38 +2012,15 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 				numNonFounders);
 		int numPersons = numNonFounders + numFounders;
 		for(int ind = 0; ind < numPersons; ind++) {
-		  int thisBranchNumSpouses;
-		  if (branchNumSpouses[gen])
-		    thisBranchNumSpouses = -branchNumSpouses[gen][branch];
-		  else if (gen == numGen - 1) // no spouses in last generation
-		    thisBranchNumSpouses = 0;
-		  else                        // one spouse by default
-		    thisBranchNumSpouses = 1;
-		  bool curIsFounder = false;
-		  if (ind < thisBranchNumSpouses) {
-		    curIsFounder = true;
-		    if (numSampsToRetain[gen] > 0)
-		      fileOrGZ_printf(out, "\t%s%d_g%d-b%d-s%d", pedName, fam+1,
-					   gen+1, branch+1, ind+1);
-		    if (idOut) // print Ped-sim id to founder id file:
-		      fprintf(idOut, "%s%d_g%d-b%d-s%d", pedName, fam+1,
-				     gen+1, branch+1, ind+1);
-		  }
-		  else {
-		    int indNum = ind - thisBranchNumSpouses;
-		    if (numSampsToRetain[gen] > 0)
-		      fileOrGZ_printf(out, "\t%s%d_g%d-b%d-i%d", pedName, fam+1,
-					   gen+1, branch+1, indNum + 1);
-		    if (idOut &&
-			(gen == 0 || branchParents[gen][branch*2].branch < 0)) {
-		      assert(indNum == 0);
-		      curIsFounder = true;
-		      fprintf(idOut, "%s%d_g%d-b%d-i%d", pedName, fam+1,
-				     gen+1, branch+1, indNum + 1);
-		    }
-		  }
-
+		  fileOrGZ_printf(out, "\t");
+		  bool curIsFounder = printSampleId(NULL, simDetails[ped],
+						    fam, gen, branch, ind,
+						    /*printAllGens=*/ false,
+						    /*gzOut=*/ &out);
 		  if (idOut && curIsFounder) {
+		    // print Ped-sim id to founder id file:
+		    printSampleId(idOut, simDetails[ped], fam, gen, branch,ind);
+
 		    int hapNum = theSamples[ped][fam][gen][branch][ind].
 				      haps[0][/*chrIdx=*/0].front().foundHapNum;
 		    assert(hapNum % 2 == 0);
@@ -2293,21 +2305,10 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	  for(int ind = 0; ind < numPersons; ind++) {
 
 	    // print family id (PLINK-specific) and sample id
-	    int thisBranchNumSpouses;
-	    if (branchNumSpouses[gen])
-	      thisBranchNumSpouses = -branchNumSpouses[gen][branch];
-	    else if (gen == numGen - 1) // no spouses in last generation
-	      thisBranchNumSpouses = 0;
-	    else                        // one spouse by default
-	      thisBranchNumSpouses = 1;
-	    if (ind < thisBranchNumSpouses)
-	      fprintf(out, "%s%d %s%d_g%d-b%d-s%d ",
-		      pedName, fam+1, pedName, fam+1, gen+1, branch+1,
-		      ind+1);
-	    else
-	      fprintf(out, "%s%d %s%d_g%d-b%d-i%d ",
-		      pedName, fam+1, pedName, fam+1, gen+1, branch+1,
-		      ind - thisBranchNumSpouses + 1);
+	    fprintf(out, "%s%d ", pedName, fam+1); // family id first
+	    printSampleId(out, simDetails[ped], fam, gen, branch, ind,
+			  /*printAllGens=*/ true);
+	    fprintf(out, " ");
 
 	    // print parents
 	    if (gen == 0 || ind < numFounders) {
@@ -2332,14 +2333,9 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		}
 		else {
 		  // use "primary" person: immediately after all the spouses
-		  int thisBranchNumSpouses;
-		  if (branchNumSpouses[gen-1])
-		    thisBranchNumSpouses =
-			    -branchNumSpouses[ pars[p].gen ][ pars[p].branch ];
-		  else if (gen == numGen - 1) // no spouse in last generation
-		    thisBranchNumSpouses = 0;
-		  else                        // one spouse by default
-		    thisBranchNumSpouses = 1;
+		  int thisBranchNumSpouses= getBranchNumSpouses(simDetails[ped],
+								pars[p].gen,
+								pars[p].branch);
 		  parIdx[p] = thisBranchNumSpouses;
 		}
 	      }
