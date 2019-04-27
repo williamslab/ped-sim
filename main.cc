@@ -185,8 +185,8 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
-bool compInheritRec(InheritRecord &a, InheritRecord &b);
-bool compIBDRecord(IBDRecord &a, IBDRecord &b);
+bool compInheritRec(const InheritRecord &a, const InheritRecord &b);
+bool compIBDRecord(const IBDRecord &a, const IBDRecord &b);
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
