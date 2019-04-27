@@ -8,16 +8,18 @@ Table of Contents
 -----------------
    * Pedigree Simulator
       * [Basic usage](#basic-usage)
+	* [Quick start](#quick-start)
       * [Compiling](#compiling)
-      * [Def file](#def-file)
+      * [Def file (with examples)](#def-file)
       * [Map file](#map-file)
       * [Input VCF file](#input-vcf-file)
       * [Crossover model](#crossover-model)
+      * [Output IBD segments file](#output-ibd-segments-file)
       * [Output VCF file](#output-vcf-file)
-      * [Output BP file](#output-bp-file)
       * [Output fam file](#output-fam-file)
       * [Output log file](#output-log-file)
       * [Sample ids for simulated individuals](#samp-ids)
+      * [Output BP file](#output-bp-file)
       * [Extra notes: sex-specific maps](#extra-notes-sex-specific-maps)
       * [Citing Ped-sim](#citing-ped-sim)
       * [Other optional arguments](#other-optional-arguments)
@@ -433,7 +435,7 @@ Use the `--pois` option to simulate using a Poisson crossover model.
 
 ------------------------------------------------------
 
-Output IBD segments (seg) file
+Output IBD segments file
 ------------------------------
 
 Ped-sim generates a list of all simulated IBD segments among relative pairs
@@ -615,10 +617,11 @@ samples maintain their original calls**
 
 ### Pseudo-haploid rate: `--pseudo_hap <#>`
 
-The `--pseudo_hap` option generates pseudo-haploid data with the rate of (fully)
-missing data given by the argument (e.g., `--pseudo_hap .1` will have 10% of
-sites completely missing data). Sites that do have data are all haploid for a
-random allele sampled from the two original ones.
+The `--pseudo_hap` option generates pseudo-haploid data with mean pseudo-haploid
+coverage given by the argument (e.g., `--pseudo_hap .1` will randomly select
+sites with data at a rate of .1, and the remaining sites will be missing data).
+Sites that do have data are all haploid for random allele sampled from the two
+original ones and are coded as homozygous.
 
 Can only use `--miss_rate` or `--pseudo_hap` not both.
 
