@@ -37,44 +37,52 @@ Table of Contents
 Basic usage:
 ------------
 
-    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --intf <filename>
+    ./ped-sim -d <in.def> -m <map file> -o <out_prefix> --intf <filename>
 
 To use a non-interference crossover model, i.e., a Poisson model, use:
 
-    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --pois
+    ./ped-sim -d <in.def> -m <map file> -o <out_prefix> --pois
 
-The simulator produces four output files: `[out_prefix].vcf` (or
-`[out_prefix].vcf.gz`), `[out_prefix].bp`, `[out_prefix].fam`, and
-`[out_prefix].log`. Descriptions of each of these input and output files are
-below. Run `ped-sim` without arguments to see a full listing of options. This
-document describes all options with the non-required options described at the
-end.
+The above both produce three output files: `[out_prefix].seg` containing IBD
+segments, `[out_prefix].fam`, a PLINK format fam file with all simulated
+relatives, and `[out_prefix].log`, a log of what Ped-sim printed to stdout.
 
+With the above input options, Ped-sim does not produce genetic data, but only
+IBD segments for artificial (ungenotyped) relatives. To simulate relatives with
+genetic data (and using crossover interference modeling), run:
+
+    ./ped-sim -d <in.def> -m <map file> -i <in.vcf/in.vcf.gz> -o <out_prefix> --intf <filename>
+
+Which will generate a fourth output file, `[out_prefix].vcf` (or
+`[out_prefix].vcf.gz`),
+ 
+Run `ped-sim` without arguments to see a summary of options. This document
+gives a detailed description of the input and output files and all options.
+
+ 
 ### Quick start
 
-To use Ped-sim to simulate from `example/second_deg.def`:
+To use Ped-sim to simulate from the def file `example/second_deg.def`:
 
-1. Obtain a genetic map. For humans, see [below](#map-file) for links and code
-for generating a sex-specific map.
+1. Obtain a genetic map. For humans, links and code to generate a sex-specific
+map in Ped-sim format are [below](#map-file).
 2. Run Ped-sim:
 
-        ./ped-sim -d example/second_deg.def -m refined_mf.simmap -i /dev/null \
+        ./ped-sim -d example/second_deg.def -m refined_mf.simmap \
           -o output --intf interfere/nu_p_campbell.tsv
 
-This uses the [below](#map-file) genetic map, [human crossover interference
-parameters](https://www.nature.com/articles/ncomms7260) stored here in
-`interfere/`, and uses `/dev/null` in place of an input VCF file so includes no
-genetic data. If your OS lacks `/dev/null`, create an empty file to pass in for
-the `-i` parameter. The `output.bp` file is the primary result of this run; it
-records which samples carry each haplotype. This is not the same as IBD
-segments, and we will be adding the generation of these segments later.
+This uses the [below](#map-file) genetic map, and [human crossover interference
+parameters](https://www.nature.com/articles/ncomms7260) stored in `interfere/`.
+The `output.seg` file is the primary result of this run and lists the IBD
+segments the samples share. It does not include any input genetic data and so
+does not produce any output genetic data.
 
 ------------------------------------------------------
 
 Compiling
 ---------
 
-To compile the ped-sim program, most Linux/Unix-based users should simply be
+To compile the Ped-sim program, most Linux/Unix-based users should simply be
 able to type
 
     make
@@ -87,11 +95,11 @@ compiling.
 Def file
 --------
 
-The def file describes the pedigree structure(s) to be simulated. Comments are
+The def file defines the pedigree structure(s) to be simulated. Comments are
 allowed on a line by themselves beginning with #. Example def files are in the
-`example` directory, and a description of the three example files is below.
+`example/` directory, and descriptions of the three example files are below.
 
-The first line of a pedigree specification contains four columns:
+The first line of a pedigree definition contains four (or five) columns:
 
     def [name] [#copies] [#generations] <sex of i1>
 
@@ -104,7 +112,7 @@ uses this to generate the simulated individuals' sample ids (details in
 structure to produce. While the replicates all have the same structure, they
 will descend from different founders and will have different randomized sex
 assignments (when using sex specific maps and assuming `<sex of i1>` is not
-specified), and so are independent.
+given), and so are independent.
 
 `[#generations]` indicates the number of generations in the pedigree.
 
@@ -115,30 +123,30 @@ the individual with id `i1` (the reproducing individual) in each branch. See
 After this first line, the def file lists simulation details corresponding to
 various generations in the pedigree. Each such line has the following format:
 
-    [generation#] [#samples_to_print] <#branches> <parent_specifications>
+    [generation#] [#samples_to_print] <#branches> <branch_parents>
 
 `[generation#]` gives an integer value for the pedigree generation number. This
 value can range from 1 (the earliest generation) to the total number of
 generations included in the pedigree, as listed on the first line of the
-specification (`[#generations]` just above).
+definition (`[#generations]` just above).
 
 `[#samples_to_print]` indicates how many samples the simulator should print for
-each branch (defined more fully below) in the indicated generation; it defaults
-to 0 so that no individuals are printed in generations that are not explicitly
-listed. All individuals in a given branch and given generation have the same
-parents and so are full siblings of one another. Because only one member of
-each branch can have children, setting this to a value greater than 1 generates
-data for individuals that do not have any offspring. **To simulate a pedigree in
-which multiple full siblings each have children, increase the number of
-branches in the third `<#branches>` field.** Note that any _founder_ spouses of
-the person who does have children in a branch are always printed if this field
-is greater than 0. These spouses do not count in the value of this field: the
-value indicates how many full siblings to generate for each branch; if it is
-non-zero, that number of siblings and any spouses will be printed. Also note
-that if a branch contains a founder individual (such as in generation 1), it
-will only ever contain one individual (and any spouses of that person): the
-`[#samples_to_print]` value will only control whether (if it is greater than 0)
-or not (if it is 0) that founder and his/her spouses are printed.
+each branch (see below for a definition of "branch") in the indicated
+generation; it defaults to 0 so that Ped-sim prints no individuals in
+generations not explicitly listed. All individuals in a given branch and given
+generation have the same parents and so are full siblings of one another.
+Because only one member of each branch can have children, setting this to a
+value greater than 1 generates data for individuals that do not have any
+offspring. **To simulate a pedigree in which multiple full siblings each have
+children, increase the number of branches in the third `<#branches>` field.**
+Note that any _founder_ spouses of the person who does have children in a
+branch are always printed if this field is greater than 0. These spouses do not
+count in the value of this field: the field gives the number of full siblings
+to generate for each branch. Also note that if a branch contains a founder
+individual (such as in generation 1), it will only ever contain one individual
+(and any spouses of that person): the `[#samples_to_print]` value will only
+control whether (if it is greater than 0) or not (if it is 0) Ped-sim prints
+that founder and his/her spouses.
 
 `<#branches>` is an optional field. By default:
 
@@ -150,33 +158,32 @@ branches as the previous generation. In consequence, not all generations need
 an explicit listing in the def file.
 
 For generation 1, multiple branches are allowed, and all such branches contain
-only founder individuals. For all other generations, if the parent specification
-(next field described below) is left empty, the parents of each branch are as
-follows:
+only founder individuals. For all other generations, if the `branch_parents`
+field (described below) is empty, the parents of each branch are as follows:
 
 * If the number of branches is *an integer multiple* n *times the number of
-branches in the previous generation*, individuals in each branch *i* in the
-previous generation are the parents of branches *n\*(i-1)+1* through *n\*i* in
-the current generation. (Thus, *if the number of branches is the same*,
-individuals in each branch *i* in the previous generation are the parents of
-branch *i* in the current generation.)
+branches in the previous generation*, individuals in branch *i* in the previous
+generation are the parents of branches *n\*(i-1)+1* through *n\*i* in the
+current generation. (Thus, *if the number of branches is the same*, individuals
+in each branch *i* in the previous generation are the parents of branch *i* in
+the current generation.)
 * If the number of branches is *less than the number of branches in the
 previous generation*, individuals in each branch *i* in the previous generation
 are the parents of branch *i* in the current generation. (Thus some branches in
 the previous generation do not have children.)
 * If the number of branches is *greater than but not divisible by the number of
 branches in the previous generation*, branches 1 through *n\*p* have parents
-assigned according to the integer multiple case just above; here *p* is the
-number of branches in the previous generation and *n* is the largest integer
-divisor by *p* of the number of branches in the current generation. The
-remaining branches *n\*p+1* through *n\*p+r* contain founder individuals (as in
-generation 1), where *r* is the remainder branch number after integer division.
+assigned according to the integer multiple case above; here *p* is the branch
+number in the previous generation and *n* is the largest integer divisor by
+*p* of the number of branches in the current generation. The remaining branches
+*n\*p+1* through *n\*p+r* contain founder individuals (as in generation 1),
+  where *r* is the remainder branch number after integer division.
 
 The above are defaults, and the parents of a branch can be specified using the
-parent specification entry.
+branch parent entry.
 
-`<parent_specifications>` is optional. The default parent assignments are given
-above. The format of the specifications is any of:
+`<branch_parents>` is optional. The default parent assignments are given
+above. Any of the following formats provide parent specifications:
 
     [current_branches]:
     [current_branches]:[parent_branch1]
@@ -206,10 +213,10 @@ that parent has children with two different founder spouses, making the
 children in the branches half-siblings.
 
 If two parent branches are listed as in `[parent_branch1]_[parent_branch2]`,
-the two reproducing parents are from the indicated branches in the previous
-generation. Thus, for example, `2,4:1_3` indicates that branches 2 and 4 from
-the current generation are to be the children of the reproducing parents in
-branches 1 and 3 in the previous generation.
+the two parents are from the indicated branches in the previous generation.
+Thus, for example, `2,4:1_3` indicates that branches 2 and 4 from the current
+generation are to be the children of the reproducing individuals in branches 1
+and 3 in the previous generation.
 
 To have parents from different generations, the format is
 `[parent_branch1]_[parent_branch2]^[parent_branch2_generation]`. Here, one
@@ -237,7 +244,7 @@ named `grandparent`, with data printed for two grandparents and one grandchild.
     3 1
 
 This indicates that the founder individual (and therefore his/her spouse) from
-the one branch in generation 1 (note: default has one branch in generation 1)
+the branch in generation 1 (note: the default is one branch in generation 1)
 should have data printed. Generation 2 has a default of two branches, but since
 we only want one grandchild, we explicitly set this to one branch and do not
 print individuals from that generation. Generation 3 prints one individual, and
@@ -298,15 +305,15 @@ a single pedigree that has four generations:
 Because the first two generations are not explicitly listed, they have the
 default number of branches: one and two for generations 1 and 2, respectively.
 Since the number of samples to print is 0 by default, no samples are printed
-from these generations.  In generation 3, there are four branches, with
-generation 2, branch 1 a parent (along with a founder spouse) of branches 1 and
-2, and generation 2, branch 2 a parent (with a founder spouse) of branches 3
-and 4.  No samples from generation 3 are printed. Finally, generation 4 has
-four branches, the same as the previous generation, with one sample printed per
-branch, or a total of four individuals printed. Because the four branches in
-generation 3 included two sets of full siblings, two pairs of the four samples
-in generation 4 are first cousins. The other pairs are second cousins, and
-their most recent common ancestors are in generation 1.
+from these generations. In generation 3, there are four branches, with
+generation 2, branch 1 a parent of branches 1 and 2, and generation 2, branch 2
+a parent of branches 3 and 4. No samples from generation 3 are printed.
+Finally, generation 4 has four branches, the same as the previous generation,
+with one sample printed per branch, or a total of four individuals printed.
+Because the four branches in generation 3 included two sets of full siblings,
+two pairs of the four samples in generation 4 are first cousins. The other
+pairs are second cousins, and their most recent common ancestors are in
+generation 1.
 
 The second entry in this file is very similar to the first:
 
@@ -320,9 +327,9 @@ This generation once again has two branches, and each branch has the
 reproducing individual from generation 1, branch 1 as one of their parents.
 However, because the specification is separated for the two branches and
 includes only branch number 1, these branches are the offspring of two
-different founders and are thus half-siblings. In consequence, the ultimate
-descendants in generation 4 are a mix of (full) first cousins and half-second
-cousins.
+different founder spouses and are thus half-siblings. In consequence, the
+ultimate descendants in generation 4 are a mix of (full) first cousins and
+half-second cousins.
 
 ### Example def file: `example/cousins-1st_half_to_3rd.def`
 
@@ -336,14 +343,14 @@ documentation of these pedigree specifications.
 Map file <a name="map-file"></a>
 --------
 
-The genetic map file contains three columns for a sex-averaged map or four
+The genetic map file contains three columns for a sex-averaged map and four
 columns if using male and female maps. The format of this file is:
 
     [chromosome] [physical_position] [map_position0] <map_position1>
 
 The chromosomes are expected to be listed in the same order as they are in
-the input VCF file, with the physical positions in increasing order. The
-chromosome names must match the names in the input VCF file.
+any input VCF file, with the physical positions in increasing order. The
+chromosome names must also match the names in the input VCF file.
 
 `[map_position0]` is genetic position in centiMorgans, and should either be the
 sex-averaged genetic position if using only one map, or should be the male
@@ -373,20 +380,16 @@ simulator.
 Input VCF file
 --------------
 
-All founders in the simulated pedigrees are randomly sampled individuals
-from the input VCF file. This VCF must contain phased data for all individuals,
-with no missing data for any site. As most phasers automatically impute missing
-data, the latter requirement should be easily met. __At present, Ped-sim only
-supports the GT FORMAT field, so please remove additional fields before using
-Ped-sim.__
+When genetic data are needed, an input VCF is required to be provided with the
+`-i` option. Given such a VCF, Ped-sim randomly samples individuals from this
+data and uses them as founders.  The VCF must contain phased data for all
+individuals, with no missing data for any site. As most phasers automatically
+impute missing data, the latter requirement should be to easy to meet. __At
+present, Ped-sim only supports the GT FORMAT field, so please remove additional
+fields before using Ped-sim.__
 
 The input VCF file can be gzipped, and if it is, Ped-sim prints the output VCF
-in gzipped format.
-
-If your aim is to simulate only crossover break points and not genotype data,
-you can use an empty file (including /dev/null) as the input VCF file.
-Ped-sim will perform the simulation, generate a BP file, and then generate an
-empty output VCF since the input contains no markers.
+in gzipped format (but this output VCF is not bgzipped).
 
 ------------------------------------------------------
 
@@ -403,15 +406,14 @@ supports are below.
 ### Crossover interference model: `--intf <file>`
 
 The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
-model of crossover. This model requires specification of `nu` and `p`
+crossover model. This model requires specification of `nu` and `p`
 parameters for each chromosome. The `interference` subdirectory in the
 repository contains a file `nu_p_campbell.tsv` with estimates of these
-parameters for the human autosomes from [Campbell et al.
-2015](https://www.nature.com/articles/ncomms7260).
+parameters for the human autosomes from [Campbell et al. 2015](https://www.nature.com/articles/ncomms7260).
 
 As with the VCF, the interference file must list chromosomes in the same order
 as the genetic map, and the chromosome names must be identical to the genetic
-map. The --intf file requires parameters to be given for both sexes and
+map. The `--intf` file requires parameters to be given for both sexes and
 requires a genetic map for both males and females. Ped-sim will print an error
 when running with `--intf` if the genetic map only has one set of map
 positions.
@@ -431,6 +433,22 @@ Use the `--pois` option to simulate using a Poisson crossover model.
 
 ------------------------------------------------------
 
+Output IBD segments (seg) file
+------------------------------
+
+Ped-sim generates a list of all simulated IBD segments among relative pairs
+whenever both samples have been requested to be printed. This file has nine
+fields:
+
+    [sample 1] [sample 2] [chromosome] [physical position start] [physical positoin end] [IBD type] [genetic position start] [genetic position end]
+
+The IBD type is one of `IBD1`, `IBD2` or `HBD`. `IBD1` indicates the pair shares
+one IBD segment (on one of their two haplotypes) in the interval, and `IBD2`
+indicates the pair shares two segments IBD in the region. `HBD` stands for
+homomozygous by descent, also called a run of homozygosity (ROH), which is a
+region where an individual is IBD with themselves. The latter only occurs in
+the presence of inbreeding.
+
 Output VCF file
 ---------------
 
@@ -442,53 +460,11 @@ description of the sample ids of the simulated individuals.
 
 ------------------------------------------------------
 
-Output BP file
---------------
-
-The break points (BP) file lists information about the haplotypes of each
-sample. All founders have a unique numerical id for each of their two
-haplotypes, starting from 0 and ranging to 2\**F*-1, where *F* is the number of
-founders across all simulated pedigrees. Within the BP file, there are two
-lines for every sample requested to be printed (according to the def file).
-Each line begins with the sample id of the simulated individual (described
-below), the sex of that person, either `s0` for male or `s1` for female, which
-haplotype, `h0` or `h1`, that line describes, and then a variable number of
-segments for each simulated chromosome.
-
-For each simulated chromosome, there is starting physical position and one or
-more break points. The start description is listed as
-
-    [chromosome]:[start physical position]
-
-Following this, break points where crossovers occurred are indicated as
-
-    [founder haplotype]:[physical position]
-
-The range of physical positions between the previous break point (or start
-physical position for the first marker) descend from `[founder haplotype]`
-number. For example, consider:
-
-    grandparent2_g3-b1-i1 s0 h0 22|17178586 9:25639567 8:45864504 6:51039778
-
-This line describes the haplotypes and break points inherited by an individual
-with id `grandparent2_g3-b1-i1`. That individual is simulated as male (`s0`),
-and the description is for their first haplotype (`h0`). Only chromosome 22 is
-listed, and it begins at position `17178586`. Note that the start and end
-positions -- the last break point position on any chromosome -- are dictated by
-the input genetic map. The first break point `9:25639567` indicates that this
-individual inherited haplotype 9 from position 17,178,586 through 25,639,567,
-inclusive. The next break point `8:45864504` designates that the individual
-inherited haplotype 8 from position 25,639,568 through 45,864,504. And the final
-break point of `6:51039778` says that the individual received haplotype 6 from
-position 45,864,505 through 51,039,778, the latter of which ends the chromosome.
-
-------------------------------------------------------
-
 Output fam file
 ---------------
 
-The simulator produces a PLINK format fam file with the pedigree structures
-simulated. This fam file contains all generated samples, including those that
+The simulator produces a PLINK format fam file with the simulated pedigree
+structures. This fam file contains all generated samples, including those that
 are not requested to be printed in the def file. This enables the relationships
 between all samples to be determined from the fam file alone.
 
@@ -523,9 +499,51 @@ total number of samples requested to be simulated in the generation. Individual
 `i1` is the reproducing individual that is the parent of any descendant
 branches. When `i1` does have children, his/her founder spouses have the same
 prefix id but end in `s[#]`, with the number ranging from 1 to the total number
-of spouses of that individual. The number of spouses will only be 1 unless
+of spouses of the `i1` individual. The number of spouses will only be 1 unless
 parent specifications appear in the def file that indicate more founder spouses
 should be used.
+
+------------------------------------------------------
+
+Output BP file
+--------------
+
+When using the `--bp` option, Ped-sim prints a break points (BP) file that lists
+complete information about each sample's haplotypes. All founders have a unique
+numerical id for each of their two haplotypes, starting from 0 and ranging to
+2\**F*-1, where *F* is the total number of founders in all simulated pedigrees.
+Within the BP file, there are two lines for every sample requested to be printed
+(according to the def file). Each line begins with the sample id (described
+above) of the simulated individual, the sex of that person, either `s0` for male
+or `s1` for female, the haplotype that line describes, `h0` or `h1`, and then a
+variable number of segments for each simulated chromosome.
+
+For each simulated chromosome, there is starting physical position and one or
+more break points. The start description is listed as
+
+    [chromosome]|[start physical position]
+
+Following this, break points where crossovers occurred are indicated as
+
+    [founder haplotype]:[physical position]
+
+The range of physical positions between the previous break point (or start
+physical position for the first segment) descend from `[founder haplotype]`
+number. For example, consider:
+
+    grandparent2_g3-b1-i1 s0 h0 22|17178586 9:25639567 8:45864504 6:51039778
+
+This line describes the haplotypes and break points inherited by an individual
+with id `grandparent2_g3-b1-i1`. That individual is simulated as male (`s0`),
+and the description is for their first haplotype (`h0`). Only chromosome 22 is
+listed, and it begins at position `17178586`. Note that the start and end
+positions -- the last break point position on any chromosome -- are dictated by
+the input genetic map. The first break point `9:25639567` indicates that this
+individual inherited haplotype 9 from position 17,178,586 through 25,639,567,
+inclusive. The next break point `8:45864504` designates that the individual
+inherited haplotype 8 from position 25,639,568 through 45,864,504. And the final
+break point of `6:51039778` says that the individual received haplotype 6 from
+position 45,864,505 through 51,039,778, the latter of which ends the chromosome.
 
 ------------------------------------------------------
 
@@ -535,7 +553,8 @@ Extra notes: sex-specific maps
 When simulating with sex-specific maps, it is necessary to include data for all
 chromosomes in one run. This is because sex is assigned randomly, but only once
 per run. Thus, to maintain consistency of the sex of each individual in a
-given pedigree, all chromosomes need to be simulated in the same run.
+given pedigree (and across chromosomes), all chromosomes need to be included
+in the same run.
 
 ------------------------------------------------------
 
@@ -575,10 +594,13 @@ we are unaware of a study that looks at error rates by "true" genotype class in
 SNP array data, the `--err_hom_rate` option provides the ability to produce
 different rates of errors for genotypes that are truly homozygous. The default
 rate for generating an erroneous genotype that is homozygous for the opposite
-alleles relative to the truth is 0, so errors at homozygous genotypes produce a heterozygote. If set to, say, .1, when a homozygous genotype is set to an
-erroneous value, 10% of the time it is set homozygous for the opposite allele,
-and 90% of the time is heterozygous. For equal rates of both these classes, set
-the rate for this option to .5.
+alleles relative to the truth is 0, so errors in homozygous genotypes produce a
+heterozygote. If set to, say, .1, whenever Ped-sim is changing a homozygous
+genotype to an erroneous value, 10% of the time it assigns the genotype as
+homozygous for the opposite allele, and 90% of the time it uses a heterozygous
+genotype. For equal rates of both these classes, set the rate for this option
+to .5. Values even as high as .1 are likely to be fairly unrealistic (based on
+some internal analyses) and so the default rate is 0.
 
 ### Missingness rate: `--miss_rate <#>`
 
@@ -586,7 +608,7 @@ As real data includes missingness, the simulator introduces missing genotype
 calls at a rate specified by this parameter, with a default of 1e-3. Set this
 value to 0 for no missing genotypes.
 
-Can only use `--miss_rate` or `--pseudo_hap` not both.
+Ped-sim allows either `--miss_rate` or `--pseudo_hap`, but not both.
 
 **Note: only pedigree samples have sites set to missing; `--retain_extra`
 samples maintain their original calls**
@@ -618,8 +640,8 @@ sample id Ped-sim assigned to that founder.
 
 ### Retaining extra input samples: `--retain_extra <#>`
 
-The simulator uses samples from the input VCF as founder individuals, and will
-exit if more founders are needed than available in the input VCF. If requested
+The simulator uses samples from the input VCF as founder individuals and will
+exit if there are too few samples in the VCF to do the simulation. If requested
 using `--retain_extra`, the program will also print a specified number of input
 samples that were not used as founders in the simulations. If the number is
 less than 0 (e.g., `--retain_extra -1`), the simulator prints all unused input
@@ -637,8 +659,8 @@ Extraneous tools
 Plotting pedigree structures: `plot-fam.R`
 ------------------------------------------
 
-The `plot-fam.R` script can be used to plot the pedigree structures produced by
-`ped-sim` (or indeed for any PLINK format fam file). It requires the
+The `plot-fam.R` script plots the pedigree structures produced by `ped-sim` (or
+indeed for any PLINK format fam file). It requires the
 [kinship2](https://cran.r-project.org/web/packages/kinship2/index.html)
 R package and works by running
 
