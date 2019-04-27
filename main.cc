@@ -79,12 +79,60 @@ struct PhysGeneticPos {
 // Used to store necessary details about the source and length of each segment:
 //
 // note: start marker is implicit
-struct Segment { int foundHapNum, endPos; };
+struct Segment {
+  Segment() { }
+  Segment(int fhn, int ep) {
+    foundHapNum = fhn;
+    endPos = ep;
+  }
+  int foundHapNum, endPos;
+};
+
 typedef vector<Segment> Haplotype;
 struct Person {
   Person() { sex = 0; } // by default assume using sex-averaged map: all 0
   int sex;
   vector<Haplotype> haps[2]; // haplotype pair for <this>
+};
+
+// For the <hapCarriers> structure -- stores the sample id that inherited (or
+// is the founder of) a given haplotype
+struct InheritRecord {
+  InheritRecord() { }
+  InheritRecord(unsigned int p, int f, int g, int b, int i, int s, int e) {
+    ped = p;
+    fam = f;
+    gen = g;
+    branch = b;
+    ind = i;
+    startPos = s;
+    endPos = e;
+  }
+  unsigned int ped;
+  int fam;
+  int gen;
+  int branch;
+  int ind;
+  int startPos;
+  int endPos;
+};
+
+struct IBDRecord {
+  IBDRecord() { assert(false); }
+  IBDRecord(int og, int ob, int oi, int ci, int start, int end) {
+    otherGen = og;
+    otherBranch = ob;
+    otherInd = oi;
+    chrIdx = ci;
+    startPos = start;
+    endPos = end;
+  }
+  int otherGen;
+  int otherBranch;
+  int otherInd;
+  int chrIdx;
+  int startPos;
+  int endPos;
 };
 
 struct fileOrGZ {
@@ -118,21 +166,43 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 		   bool &sexSpecificMaps);
-int simulate(vector <SimDetails> &simDetails, Person *****&theSamples,
+int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      bool sexSpecificMaps, vector<COInterfere> &coIntf);
+	      bool sexSpecificMaps, vector<COInterfere> &coIntf,
+	      vector< vector< vector<InheritRecord> > > &hapCarriers);
 void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
-		       vector<COInterfere> &coIntf, unsigned int chrIdx);
-int getBranchNumSpouses(SimDetails &pedDets, int gen, int branch);
-bool printSampleId(FILE *out, SimDetails &pedDets, int fam, int gen, int branch,
-		   int ind, bool printAllGens = false, fileOrGZ *gzOut = NULL);
+		       vector<COInterfere> &coIntf, unsigned int chrIdx,
+		       vector< vector< vector<InheritRecord> > > &hapCarriers,
+		       int ped, int fam, int curGen, int branch, int ind);
+int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
+bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
+		   int branch, int ind, bool printAllGens = false,
+		   fileOrGZ *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
+bool compInheritRec(InheritRecord &a, InheritRecord &b);
+bool compIBDRecord(IBDRecord &a, IBDRecord &b);
+void locatePrintIBD(vector<SimDetails> &simDetails,
+		    vector< vector< vector<InheritRecord> > > &hapCarriers,
+		    vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		    bool sexSpecificMaps, char *ibdFile);
+void printIBD(FILE *out, SimDetails &pedDetails, int fam,
+	      vector< vector< vector<IBDRecord> > > *theSegs,
+	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	      bool sexSpecificMaps);
+void mergeSegments(vector<IBDRecord> &segs);
+void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
+		  int gen, int branch, int ind, IBDRecord &seg,
+		  int realStart, int realEnd, const char *type,
+		  vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		  bool sexSpecificMaps);
+void clearTheSegs(SimDetails &pedDetails, 
+		  vector< vector< vector<IBDRecord> > > *theSegs);
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outFileBuf,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
@@ -193,7 +263,9 @@ int main(int argc, char **argv) {
 
     fprintf(outs[o], "  Def file:\t\t%s\n", CmdLineOpts::defFile);
     fprintf(outs[o], "  Map file:\t\t%s\n", CmdLineOpts::mapFile);
-    fprintf(outs[o], "  Input VCF:\t\t%s\n", CmdLineOpts::inVCFfile);
+    fprintf(outs[o], "  Input VCF:\t\t%s\n",
+	    CmdLineOpts::inVCFfile == NULL ? "[none: no genetic data]" :
+					     CmdLineOpts::inVCFfile);
     fprintf(outs[o], "  Output prefix:\t%s\n\n", CmdLineOpts::outPrefix);
 
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
@@ -202,30 +274,33 @@ int main(int argc, char **argv) {
 	    CmdLineOpts::interfereFile == NULL ? "[none: Poisson model]" :
 						    CmdLineOpts::interfereFile);
 
-    fprintf(outs[o], "  Genotype error rate:\t%.1le\n",
-	    CmdLineOpts::genoErrRate);
-    fprintf(outs[o], "  Opposite homozygous error rate:\t%.2lf\n",
-	    CmdLineOpts::homErrRate);
-    fprintf(outs[o], "  Missingness rate:\t%.1le\n",
-	    CmdLineOpts::missRate);
-    fprintf(outs[o], "  Pseudo-haploid rate:\t%.1lg\n\n",
-	    CmdLineOpts::pseudoHapRate);
+    if (CmdLineOpts::inVCFfile) {
+      // options only relevant when generating data (so when we have input data)
+      fprintf(outs[o], "  Genotype error rate:\t%.1le\n",
+	      CmdLineOpts::genoErrRate);
+      fprintf(outs[o], "  Opposite homozygous error rate:\t%.2lf\n",
+	      CmdLineOpts::homErrRate);
+      fprintf(outs[o], "  Missingness rate:\t%.1le\n",
+	      CmdLineOpts::missRate);
+      fprintf(outs[o], "  Pseudo-haploid rate:\t%.1lg\n\n",
+	      CmdLineOpts::pseudoHapRate);
 
-    if (CmdLineOpts::retainExtra < 0) {
-      fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
-    }
-    else if (CmdLineOpts::retainExtra == 0) {
-      fprintf(outs[o], "  Not retaining extra samples in output VCF (printing only simulated samples)\n");
-    }
-    else {
-      fprintf(outs[o], "  Retaining %d unused samples in output VCF\n",
-	      CmdLineOpts::retainExtra);
-    }
-    if (CmdLineOpts::keepPhase) {
-      fprintf(outs[o], "  Output VCF will contain phased data\n\n");
-    }
-    else {
-      fprintf(outs[o], "  Output VCF will contain unphased data\n\n");
+      if (CmdLineOpts::retainExtra < 0) {
+	fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
+      }
+      else if (CmdLineOpts::retainExtra == 0) {
+	fprintf(outs[o], "  Not retaining extra samples in output VCF (printing only simulated samples)\n");
+      }
+      else {
+	fprintf(outs[o], "  Retaining %d unused samples in output VCF\n",
+		CmdLineOpts::retainExtra);
+      }
+      if (CmdLineOpts::keepPhase) {
+	fprintf(outs[o], "  Output VCF will contain phased data\n\n");
+      }
+      else {
+	fprintf(outs[o], "  Output VCF will contain unphased data\n\n");
+      }
     }
   }
 
@@ -251,33 +326,55 @@ int main(int argc, char **argv) {
   // The fifth index is the individual number
   Person *****theSamples;
 
+  // Record of which founders and descendants inherited a given haplotype along
+  // with the start and end positions.
+  // The first index is the haplotype number
+  // The second index is the chromosome
+  // The third index is the record index
+  vector< vector< vector<InheritRecord> > > hapCarriers;
+
   for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "Simulating haplotype transmissions... ");
     fflush(outs[o]);
   }
   int totalFounderHaps = simulate(simDetails, theSamples, geneticMap,
-				  sexSpecificMaps, coIntf);
+				  sexSpecificMaps, coIntf, hapCarriers);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
 
+  if (CmdLineOpts::printBP) {
+    for(int o = 0; o < 2; o++) {
+      fprintf(outs[o], "Printing break points... ");
+      fflush(outs[o]);
+    }
+    sprintf(outFile, "%s.bp", CmdLineOpts::outPrefix);
+    printBPs(simDetails, theSamples, geneticMap, /*bpFile=*/ outFile);
+    for(int o = 0; o < 2; o++) {
+      fprintf(outs[o], "done.\n");
+    }
+  }
+
   for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "Printing break points... ");
+    fprintf(outs[o], "Printing IBD segments... ");
     fflush(outs[o]);
   }
-  sprintf(outFile, "%s.bp", CmdLineOpts::outPrefix);
-  printBPs(simDetails, theSamples, geneticMap, /*bpFile=*/ outFile);
+  sprintf(outFile, "%s.seg", CmdLineOpts::outPrefix);
+  locatePrintIBD(simDetails, hapCarriers, geneticMap, sexSpecificMaps,
+		 /*ibdFile=*/ outFile);
   for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "done.\n");
   }
 
-  for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "Generating output VCF... ");
-    fflush(outs[o]);
+  if (CmdLineOpts::inVCFfile) {
+    for(int o = 0; o < 2; o++) {
+      fprintf(outs[o], "Generating output VCF... ");
+      fflush(outs[o]);
+    }
+    makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
+	    /*outVCFfile=*/ outFile, geneticMap, outs);
+    for(int o = 0; o < 2; o++)
+      fprintf(outs[o], "done.\n");
   }
-  makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
-	  /*outVCFfile=*/ outFile, geneticMap, outs);
-  for(int o = 0; o < 2; o++)
-    fprintf(outs[o], "done.\n");
 
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "Printing fam file... ");
@@ -1273,7 +1370,8 @@ bool intersectNonEmpty(set<Parent,ParentComp> &a, set<Parent,ParentComp> &b) {
 // simulated samples.
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	     bool sexSpecificMaps, vector<COInterfere> &coIntf) {
+	     bool sexSpecificMaps, vector<COInterfere> &coIntf,
+	     vector< vector< vector<InheritRecord> > > &hapCarriers) {
   // Note: throughout we use 0-based values for generations though the input
   // def file is 1-based
 
@@ -1367,34 +1465,54 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  // All samples allocated for this pedigree/family/generation/branch:
 	  // simulate the actual samples
 
+	  Segment trivialSeg;
+
 	  // for each chromosome:
-	  for(unsigned int chrIdx = 0; chrIdx < geneticMap.size(); chrIdx++) {
+	  unsigned int numChrs = geneticMap.size();
+	  for(unsigned int chrIdx = 0; chrIdx < numChrs; chrIdx++) {
 	    vector<PhysGeneticPos> *curMap = geneticMap[chrIdx].second;
 
-	    // Make trivial haplotypes for founders in current generation:
+	    // Chromosome start/ends
+	    int chrStart = curMap->front().physPos;
+	    int chrEnd = curMap->back().physPos;
+
+	    // Trivial haplotypes for founders in current generation:
 	    // no crossovers in founders
-	    Segment trivialSeg;
-	    trivialSeg.endPos = curMap->back().physPos;
+	    trivialSeg.endPos = chrEnd;
 
 	    // Simulate the founders for this chromosome:
 	    if (curGen != numGen - 1) { // no founders in the last generation
 	      for(int ind = 0; ind < numFounders; ind++) {
 		for(int h = 0; h < 2; h++) { // 2 founder haplotypes per founder
-		  if (chrIdx == 0)
-		    trivialSeg.foundHapNum = totalFounderHaps++;
+		  int foundHapNum;
+		  if (chrIdx == 0) {
+		    foundHapNum = totalFounderHaps++;
+
+		    hapCarriers.emplace_back();
+		    hapCarriers[ foundHapNum ].reserve( numChrs );
+		    hapCarriers[ foundHapNum ].resize( numChrs );
+		  }
 		  else
 		    // want the same founder on all chromosomes, so access
 		    // the haplotype number assigned to the previous
 		    // chromosome for this person:
-		    trivialSeg.foundHapNum =
+		    foundHapNum =
 			theSamples[ped][fam][curGen][branch][ind].haps[h].
 						      back().back().foundHapNum;
+
+		  trivialSeg.foundHapNum = foundHapNum;
 
 		  // the following copies <trivialSeg>, so we can reuse it
 		  theSamples[ped][fam][curGen][branch][ind].haps[h].
 								 emplace_back();
 		  theSamples[ped][fam][curGen][branch][ind].haps[h].back().
 							  push_back(trivialSeg);
+
+		  if (numSampsToRetain[curGen] > 0) { // printing <curGen>?
+		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
+			ped, fam, curGen, branch, ind, chrStart, chrEnd);
+		  }
+
 		}
 	      }
 	    }
@@ -1457,9 +1575,13 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 		// Make space for this haplotype in the current sample:
 		curFamSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
-		generateHaplotype(curFamSamps[curGen][branch][ind].haps[hapIdx].back(),
-				  theParent, curMap, coIntf, chrIdx);
-	      } // <parIdx> (simulate each transmitted haplotype)
+		Haplotype &toGen = curFamSamps[curGen][branch][ind].
+							  haps[hapIdx].back();
+		generateHaplotype(toGen, theParent, curMap, coIntf, chrIdx,
+				  hapCarriers,
+				  (numSampsToRetain[curGen] > 0) ? ped : -1,
+				  fam, curGen, branch, ind);
+	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
 	} // <branch>
@@ -1519,7 +1641,9 @@ void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 // map.
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
-		       vector<COInterfere> &coIntf, unsigned int chrIdx) {
+		       vector<COInterfere> &coIntf, unsigned int chrIdx,
+		       vector< vector< vector<InheritRecord> > > &hapCarriers,
+		       int ped, int fam, int curGen, int branch, int ind) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
   unsigned int curSegIdx[2] = { 0, 0 };
@@ -1554,23 +1678,33 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   }
 
   // initially assume we'll recombine between first and positions with map info
-  int switchIdx = 1;
+  int switchIdx = 0;
+  int nextSegStart = curMap->front().physPos;
 
   int mapNumPos = curMap->size();
   for(auto it = coLocations.begin(); it != coLocations.end(); it++) {
     // Multiply by 100 to get cM:
     double cMPosNextCO = firstcMPos + (*it * 100);
 
-    // TODO: slow linear search for switching index, but probably fast enough
-    for( ; switchIdx < mapNumPos; switchIdx++) {
-      if ((*curMap)[switchIdx].mapPos[mapIdx] > cMPosNextCO)
+    int left = 0, right = curMap->size() - 1;
+    while (true) {
+      if (right - left == 1) {
+	switchIdx = left; // want <switchIdx> <= than <cMPosNextCO>
 	break;
+      }
+      int mid = (left + right) / 2;
+      if ((*curMap)[mid].mapPos[mapIdx] < cMPosNextCO)
+	left = mid;
+      else if ((*curMap)[mid].mapPos[mapIdx] > cMPosNextCO)
+	right = mid;
+      else {
+	// equal: exact map position
+	switchIdx = mid;
+	break;
+      }
     }
-    if (switchIdx == mapNumPos)
+    if (switchIdx == mapNumPos - 1)
       break; // let code below this while loop insert the final segments
-
-    // segment ends between map indexes 1 less than the current <switchIdx>, so:
-    switchIdx--;
 
     // get physical position using linear interpolation:
     double frac = (cMPosNextCO - (*curMap)[switchIdx].mapPos[mapIdx]) /
@@ -1586,15 +1720,25 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
       Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
       if (seg.endPos >= switchPos) {
 	// last segment to copy, and we will break it at <switchPos>
-	Segment copy = seg; // don't modify <seg.endPos> directly
-	copy.endPos = switchPos;
-	toGenerate.push_back(copy);
+	toGenerate.emplace_back(seg.foundHapNum, switchPos);
 	if (seg.endPos == switchPos)
 	  curSegIdx[curHap]++;
+
+	if (ped >= 0) {
+	  hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
+	      ped, fam, curGen, branch, ind, nextSegStart, switchPos);
+	  nextSegStart = switchPos + 1;
+	}
 	break; // done copying
       }
       else {
 	toGenerate.push_back(seg);
+
+	if (ped >= 0) {
+	  hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
+	      ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
+	  nextSegStart = seg.endPos + 1;
+	}
       }
     }
     assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
@@ -1617,14 +1761,20 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 							  curSegIdx[curHap]++) {
     Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
     toGenerate.push_back(seg);
+
+    if (ped >= 0) {
+      hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
+	  ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
+      nextSegStart = seg.endPos + 1;
+    }
   }
 }
 
 // Returns the number of spouses a given generation <gen> and <branch> has
-int getBranchNumSpouses(SimDetails &pedDets, int gen, int branch) {
-  if (pedDets.branchNumSpouses[gen])
-    return -pedDets.branchNumSpouses[gen][branch];
-  else if (gen == pedDets.numGen - 1) // no spouses in last generation
+int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch) {
+  if (pedDetails.branchNumSpouses[gen])
+    return -pedDetails.branchNumSpouses[gen][branch];
+  else if (gen == pedDetails.numGen - 1) // no spouses in last generation
     return 0;
   else // one spouse by default
     return 1;
@@ -1632,18 +1782,18 @@ int getBranchNumSpouses(SimDetails &pedDets, int gen, int branch) {
 
 // Prints the sample id of the given sample to <out>.
 // Returns true if the sample is a founder, false otherwise.
-bool printSampleId(FILE *out, SimDetails &pedDets, int fam, int gen, int branch,
-		   int ind, bool printAllGens, fileOrGZ *gzOut) {
-  int thisBranchNumSpouses = getBranchNumSpouses(pedDets, gen, branch);
-  bool shouldPrint = pedDets.numSampsToRetain[gen] > 0 || printAllGens;
+bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
+		   int branch, int ind, bool printAllGens, fileOrGZ *gzOut) {
+  int thisBranchNumSpouses = getBranchNumSpouses(pedDetails, gen, branch);
+  bool shouldPrint = pedDetails.numSampsToRetain[gen] > 0 || printAllGens;
 
   if (ind < thisBranchNumSpouses) {
     if (shouldPrint) {
       if (!gzOut)
-	fprintf(out, "%s%d_g%d-b%d-s%d", pedDets.name, fam+1, gen+1, branch+1,
-		ind+1);
+	fprintf(out, "%s%d_g%d-b%d-s%d", pedDetails.name, fam+1, gen+1,
+		branch+1, ind+1);
       else
-	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-s%d", pedDets.name, fam+1,
+	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-s%d", pedDetails.name, fam+1,
 			gen+1, branch+1, ind+1);
     }
     return true; // is a founder
@@ -1651,13 +1801,13 @@ bool printSampleId(FILE *out, SimDetails &pedDets, int fam, int gen, int branch,
   else {
     if (shouldPrint) {
       if (!gzOut)
-	fprintf(out, "%s%d_g%d-b%d-i%d", pedDets.name, fam+1, gen+1, branch+1,
-		ind - thisBranchNumSpouses + 1);
+	fprintf(out, "%s%d_g%d-b%d-i%d", pedDetails.name, fam+1, gen+1,
+		branch+1, ind - thisBranchNumSpouses + 1);
       else
-	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-i%d", pedDets.name, fam+1,
+	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-i%d", pedDetails.name, fam+1,
 			gen+1, branch+1, ind - thisBranchNumSpouses + 1);
     }
-    if (gen == 0 || pedDets.branchParents[gen][branch*2].branch < 0) {
+    if (gen == 0 || pedDetails.branchParents[gen][branch*2].branch < 0) {
       assert(ind - thisBranchNumSpouses == 0);
       return true; // is a founder
     }
@@ -1721,6 +1871,441 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 
   fclose(out);
+}
+
+bool compInheritRec(InheritRecord &a, InheritRecord &b) {
+  return a.startPos < b.startPos;
+}
+
+bool compIBDRecord(IBDRecord &a, IBDRecord &b) {
+  return (a.otherGen < b.otherGen) ||
+	 (a.otherGen == b.otherGen && a.otherBranch < b.otherBranch) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	 a.otherInd < b.otherInd) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	 a.otherInd == b.otherInd && a.chrIdx < b.chrIdx) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	 a.otherInd == b.otherInd && a.chrIdx == b.chrIdx &&
+	 a.startPos < b.startPos);
+}
+
+// Locates and prints IBD segments using <hapCarriers>
+void locatePrintIBD(vector<SimDetails> &simDetails,
+		    vector< vector< vector<InheritRecord> > > &hapCarriers,
+		    vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		    bool sexSpecificMaps, char *ibdFile) {
+  FILE *out = fopen(ibdFile, "w");
+  if (!out) {
+    printf("ERROR: could not open output file %s!\n", ibdFile);
+    perror("open");
+    exit(1);
+  }
+
+  int maxNumGens = -1; // how many generations in the largest pedigree?
+  for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
+    if (it->numGen > maxNumGens)
+      maxNumGens = it->numGen;
+  }
+  assert(maxNumGens > 0);
+
+  // place to store IBD segments identified below
+  vector< vector< vector<IBDRecord> > > *theSegs =
+			  new vector< vector< vector<IBDRecord> > >[maxNumGens];
+  int curPed = -1;
+  int curFam = -1;
+
+  int totalFounderHaps = hapCarriers.size();
+  unsigned int numChrs = geneticMap.size();
+  vector<InheritRecord> overlapRecs;
+
+  // Have a record of all individuals that inherited each founder haplotype
+  // Go through this one founder haplotype and one chromosome at a time to
+  // find the overlapping IBD segments
+  for (int foundHapNum = 0; foundHapNum < totalFounderHaps; foundHapNum++) {
+    for(unsigned int chrIdx = 0; chrIdx < numChrs; chrIdx++) {
+      sort(hapCarriers[foundHapNum][chrIdx].begin(),
+	   hapCarriers[foundHapNum][chrIdx].end(), compInheritRec);
+      for(auto it = hapCarriers[foundHapNum][chrIdx].begin();
+	       it != hapCarriers[foundHapNum][chrIdx].end();
+	       it++) {
+	InheritRecord &curRec = *it;
+
+	// <theSegs> stores segments for a given pedigree and family, and to
+	// save space, it gets reused across these.
+	// If we're about to start analyzing a new pedigree or family, print
+	// the IBD segments found below and clear out <theSegs>.
+	if ((int) curRec.ped != curPed || (int) curRec.fam != curFam) {
+	  // print stored segments, locating any IBD2
+	  if (curPed >= 0)
+	    printIBD(out, simDetails[curPed], curFam, theSegs, geneticMap,
+		     sexSpecificMaps);
+	  // update:
+	  curPed = curRec.ped;
+	  curFam = curRec.fam;
+
+	  clearTheSegs(simDetails[curPed], theSegs);
+	}
+
+	// Iterate over InheritRecords that came before <curRec> to search for
+	// overlap (which implies and IBD segment
+	auto overIt = overlapRecs.begin();
+	while (overIt != overlapRecs.end()) {
+	  if (curRec.startPos < overIt->endPos) {
+	    // Have IBD segment! would print, but we have to find IBD2 regions
+	    // before we can do so.
+	    assert(curRec.ped == overIt->ped && curRec.fam == overIt->fam);
+	    assert(curRec.startPos >= overIt->startPos);
+
+	    int endPos = min(curRec.endPos, overIt->endPos);
+	    // Store away in the entry associated with the numerically lower id
+	    if (curRec.gen <= overIt->gen && curRec.branch <= overIt->branch &&
+		curRec.ind <= overIt->ind) {
+	      theSegs[ curRec.gen ][ curRec.branch ][ curRec.ind ].
+		emplace_back(overIt->gen, overIt->branch, overIt->ind,
+		    chrIdx, curRec.startPos, endPos);
+	    }
+	    else {
+	      theSegs[ overIt->gen ][ overIt->branch ][ overIt->ind ].
+		emplace_back(curRec.gen, curRec.branch, curRec.ind,
+		    chrIdx, curRec.startPos, endPos);
+	    }
+	    overIt++;
+	  }
+	  else {
+	    // Segment ends before the current start: cannot match this or any
+	    // upcoming segments
+	    // TODO: this is a bit slow
+	    overIt = overlapRecs.erase(overIt);
+	  }
+	}
+	overlapRecs.push_back(curRec);
+      }
+
+      overlapRecs.clear();
+    }
+  }
+
+  if (curPed >= 0)
+    printIBD(out, simDetails[curPed], curFam, theSegs, geneticMap,
+	     sexSpecificMaps);
+
+  fclose(out);
+
+  delete [] theSegs;
+}
+
+// print stored segments, locating any IBD2 regions
+void printIBD(FILE *out, SimDetails &pedDetails, int fam,
+	      vector< vector< vector<IBDRecord> > > *theSegs,
+	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	      bool sexSpecificMaps) {
+  // Go through <theSegs> and print segments for samples that were listed as
+  // printed in the def file
+  for(int gen = 0; gen < pedDetails.numGen; gen++) {
+    if (pedDetails.numSampsToRetain[gen] <= 0)
+      continue; // no need to print IBD segment (generation not printed)
+
+    for(int branch = 0; branch < pedDetails.numBranches[gen]; branch++) {
+      int numNonFounders, numFounders;
+      getPersonCounts(gen, pedDetails.numGen, branch,
+		      pedDetails.numSampsToRetain, pedDetails.branchParents,
+		      pedDetails.branchNumSpouses, numFounders, numNonFounders);
+      int numPersons = numNonFounders + numFounders;
+      for(int ind = 0; ind < numPersons; ind++) {
+	// segments for current individual:
+	vector<IBDRecord> &segs = theSegs[gen][branch][ind];
+	if (segs.size() == 0)
+	  continue;
+
+	// reasoning below used to locate IBD2 requires the segments be sorted.
+	// also nice to have them sorted in the output:
+	sort(segs.begin(), segs.end(), compIBDRecord);
+
+	// merge segments that are adjacent to each other
+	mergeSegments(segs);
+	int numSegs = segs.size();
+
+	// Now print segments, identifying any IBD2 and printing it as such
+	for(int i = 0; i < numSegs; i++) {
+
+	  int nextI = 1; // shift for next segment
+	  bool done = false;
+	  while (!done) {
+	    // by default should only execute the below code once
+	    // certain conditions below set this to false
+	    done = true;
+
+	    // is the <i + nextI>th segment part of an IBD2 segment with the
+	    // current one?
+	    if (i + nextI < numSegs && // valid next segment?
+		segs[i].otherGen == segs[i + nextI].otherGen &&
+		segs[i].otherBranch == segs[i + nextI].otherBranch &&
+		segs[i].otherInd == segs[i + nextI].otherInd &&
+		segs[i].chrIdx == segs[i + nextI].chrIdx &&
+		segs[i].endPos >= segs[i + nextI].startPos) {
+	      // IBD2 region
+
+	      if (pedDetails.numSampsToRetain[ segs[i].otherGen ] <= 0)
+		continue; // don't to print IBD segment (generation not printed)
+
+	      // ensure this doesn't look like a HBD segment: shouldn't happen
+	      assert(gen != segs[i].otherGen || branch != segs[i].otherBranch ||
+		     ind != segs[i].otherInd);
+
+	      // <seg[i]> should start before <seg[i + nextI]>: they're sorted
+	      assert(segs[i].startPos <= segs[i + nextI].startPos);
+
+	      // any preceding IBD1 segment?
+	      if (segs[i].startPos < segs[i + nextI].startPos) {
+		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+				   segs[i], /*realStart=*/ segs[i].startPos,
+				   /*realEnd=*/ segs[i + nextI].startPos - 1,
+				   /*type=*/ "IBD1", geneticMap,
+				   sexSpecificMaps);
+	      }
+
+	      // now the IBD2 segment:
+	      int ibd2End = min(segs[i].endPos, segs[i + nextI].endPos);
+	      printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+				 segs[i],
+				 /*realStart=*/ segs[i + nextI].startPos,
+				 /*realEnd=*/ ibd2End,
+				 /*type=*/ "IBD2", geneticMap,
+				 sexSpecificMaps);
+
+	      // likely another segment just after the IBD2 end, but that region
+	      // must be checked against later <segs>. To ensure this is done
+	      // properly, we update the startPos of the continuing segment:
+	      if (segs[i].endPos == segs[i + nextI].endPos) {
+		// corner case: both finished, increment i so that
+		// <seg[i+1]> through <seg[i + nextI]> gets skipped
+		// (they're already printed)
+		// NOTE: EFFECT WITH CODE JUST AFTER WHILE LOOP IS i += nextI
+		i++;
+		//done = true; // no need to loop (commented b/c done is true)
+	      }
+	      else if (segs[i].endPos > ibd2End) {
+		// <segs[i]> continues; should increment nextI and loop:
+		nextI++;
+		// also update start position of <segs[i]> to exclude the
+		// printed portion
+		segs[i].startPos = ibd2End + 1;
+		done = false; // loop
+	      }
+	      else {
+		// <segs[i + nextI]> continues. This is the intuitive case: <i>
+		// will increment so <segs[i + (nextI - 1) + 1]> will be
+		// considered next (see code after the while loop)
+		// Only require that the start of that segment doesn't include
+		// the already-printed regions
+		segs[i + nextI].startPos = ibd2End + 1;
+		assert(segs[i + nextI].startPos <= segs[i + nextI].endPos);
+
+		// Annoying thing is that now segs[i + nextI], with its new
+		// start position, may be out of order.
+		// This loop moves it to the right position:
+		int initI = i + nextI;
+		for(int j = 0; initI + j + 1 < numSegs &&
+			       !compIBDRecord(segs[initI + j],
+					       segs[initI + j + 1]) &&
+			       compIBDRecord(segs[initI + j + 1],
+					     segs[initI + j]); j++) {
+		  // do the swap:
+		  IBDRecord tmp = segs[initI + j];
+		  segs[initI + j] = segs[initI + j + 1];
+		  segs[initI + j + 1] = tmp;
+		}
+		//done = true; // no need to loop (commented b/c done is true)
+	      }
+	    }
+	    else {
+	      // IBD1 or HBD region:
+
+	      if (pedDetails.numSampsToRetain[ segs[i].otherGen ] <= 0)
+		continue; // don't to print IBD segment (generation not printed)
+
+	      if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
+		  ind == segs[i].otherInd)
+		// HBD
+		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+				   segs[i],
+				   /*realStart=standard=*/ segs[i].startPos,
+				   /*realEnd=standard=*/ segs[i].endPos,
+				   /*type=*/ "HBD", geneticMap,
+				   sexSpecificMaps);
+	      else
+		// IBD1
+		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+				   segs[i],
+				   /*realStart=standard=*/ segs[i].startPos,
+				   /*realEnd=standard=*/ segs[i].endPos,
+				   /*type=*/ "IBD1", geneticMap,
+				   sexSpecificMaps);
+	    }
+	  } // looping over <nextI> values
+
+	  i += nextI - 1; // skip the already-processed IBD records
+	}
+      }
+    }
+  }
+}
+
+// Helper for printIBD(): merges adjacent IBD segments
+void mergeSegments(vector<IBDRecord> &segs) {
+  int numSegs = segs.size();
+
+  int numRemoved = 0; // how many segments removed?
+  for(int i = 0; i < numSegs - numRemoved; i++) {
+    // Note: next valid segment is not really index <i> but
+    // index <i + numRemoved>. Values from <i> to <i + numRemoved - 1> are
+    // stale and present in multiple copies until the loop ends and
+    // <segs> gets resized
+    if (numRemoved)
+      segs[i] = segs[i + numRemoved]; // shift 
+
+    while (segs[i].otherGen == -1) { // segment that has been merged?
+      // remove it!
+      numRemoved++;
+
+      if (i + numRemoved < numSegs)
+	// can/should copy future segment to this position
+	segs[i] = segs[i + numRemoved];
+      else
+	// no need to do any copying for last segment that's been merged
+	// with a prior one
+	break; // avoid infinite loop on last element if it was merged
+    }
+
+    // from <i + numRemoved + 1> search for a segment to merge
+    // with current index <i>
+    for(int j = numRemoved + 1; (i + j) < numSegs; j++) {
+      if (segs[i + j].otherGen == -1)
+	continue; // skip already-merged segments
+
+      if (segs[i].otherGen != segs[i + j].otherGen ||
+	  segs[i].otherBranch != segs[i + j].otherBranch ||
+	  segs[i].otherInd != segs[i + j].otherInd ||
+	  segs[i].chrIdx != segs[i + j].chrIdx)
+	// must be same other person/chromosome in order to merge
+	// due to sorting, if we encounter a different person, we know that
+	// no future segments will match
+	break;
+      if (segs[i].endPos + 1 < segs[i + j].startPos)
+	// next segment beyond end of current one, and all
+	// subsequent segments necessarily start at least as far away
+	// because of sorting: can't merge
+	break;
+      if (segs[i].endPos + 1 == segs[i + j].startPos) {
+	// merge!
+	segs[i].endPos = segs[i+j].endPos;
+	segs[i + j].otherGen = -1;
+	// continue searching for additional segments to merge wth <i>
+      }
+    }
+  }
+  // Resize <segs> post-merging
+  numSegs -= numRemoved;
+  segs.resize(numSegs);
+
+  // Check for bugs
+  for(int i = 0; i < numSegs; i++) {
+    assert(segs[i].otherGen != -1);
+    if (i < numSegs - 1)
+      assert(compIBDRecord(segs[i], segs[i+1]) ||
+	     !compIBDRecord(segs[i+1], segs[i]));
+  }
+}
+
+// Prints the IBD segment described by the parameters to <out>
+void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
+		  int gen, int branch, int ind, IBDRecord &seg,
+		  int realStart, int realEnd, const char *type,
+		  vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+		  bool sexSpecificMaps) {
+  printSampleId(out, pedDetails, fam, gen, branch, ind);
+  fprintf(out, "\t");
+  printSampleId(out, pedDetails, fam, seg.otherGen, seg.otherBranch,
+		seg.otherInd);
+
+  fprintf(out, "\t%s\t%d\t%d\t%s", /*chrName=*/geneticMap[seg.chrIdx].first,
+	  realStart, realEnd, type);
+
+  // Find the genetic positions of the start and ends
+  int ibdPhys[2] = { realStart, realEnd };
+  double ibdGenet[2];
+  vector<PhysGeneticPos> &thisChrMap = *geneticMap[ seg.chrIdx ].second;
+
+  for(int pos = 0; pos < 2; pos++) {
+    int left = 0, right = thisChrMap.size() - 1;
+
+    while (true) {
+      if (right - left == 1) {
+	// have the left and right side: interpolate
+	double interpFrac =
+	  (double) (ibdPhys[pos] - thisChrMap[left].physPos) /
+			(thisChrMap[right].physPos - thisChrMap[left].physPos);
+	// start from the left position
+	if (sexSpecificMaps)
+	  ibdGenet[pos] =
+		  (thisChrMap[left].mapPos[0] + thisChrMap[left].mapPos[1]) / 2;
+	else
+	  ibdGenet[pos] = thisChrMap[left].mapPos[0];
+
+	// and add the factor for the distance between <left> and <right> that
+	// the position is:
+	if (sexSpecificMaps)
+	  ibdGenet[pos] += interpFrac *
+	    ((thisChrMap[right].mapPos[0] + thisChrMap[right].mapPos[1]) / 2 -
+	     ibdGenet[pos]);
+	else
+	  ibdGenet[pos] += interpFrac * (thisChrMap[right].mapPos[0] -
+								 ibdGenet[pos]);
+	break;
+      }
+      int mid = (left + right) / 2;
+      if (ibdPhys[pos] < thisChrMap[mid].physPos)
+	right = mid;
+      else if (ibdPhys[pos] > thisChrMap[mid].physPos)
+	left = mid;
+      else {
+	// equal: have exact position in map:
+	if (sexSpecificMaps)
+	  ibdGenet[pos] =
+		    (thisChrMap[mid].mapPos[0] + thisChrMap[mid].mapPos[1]) / 2;
+	else
+	  ibdGenet[pos] = thisChrMap[mid].mapPos[0];
+	break;
+      }
+    }
+  }
+
+  fprintf(out, "\t%lf\t%lf\t%lf\n", ibdGenet[0], ibdGenet[1],
+	  ibdGenet[1] - ibdGenet[0]);
+}
+
+// Helper for locatePrintIBD() to clear information in <theSegs>
+void clearTheSegs(SimDetails &pedDetails, 
+		  vector< vector< vector<IBDRecord> > > *theSegs) {
+  int numGen = pedDetails.numGen;
+  for(int gen = 0; gen < numGen; gen++) {
+    int numBranches = pedDetails.numBranches[gen];
+    if ((int) theSegs[gen].size() < numBranches)
+      theSegs[gen].resize(numBranches);
+    for(int branch = 0; branch < numBranches; branch++) {
+      int numNonFounders, numFounders;
+      getPersonCounts(gen, numGen, branch, pedDetails.numSampsToRetain,
+		      pedDetails.branchParents,
+		      pedDetails.branchNumSpouses, numFounders,
+		      numNonFounders);
+      int numPersons = numNonFounders + numFounders;
+      if ((int) theSegs[gen][branch].size() < numPersons)
+	theSegs[gen][branch].resize(numPersons);
+      for(int ind = 0; ind < numPersons; ind++) {
+	theSegs[gen][branch][ind].clear();
+      }
+    }
+  }
 }
 
 // open <filename> either using standard I/O or as a gzipped file if <isGZ>
@@ -2345,6 +2930,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		// print parent 0 first by default, but if parent 0 is female,
 		// the following will switch and print parent 1 first
 		int printPar = p ^ par0sex;
+		// TODO: use printSampleId()
 		if (!isSpouse[ printPar ])
 		  // must be the primary person, so i1:
 		  fprintf(out, "%s%d_g%d-b%d-i1 ", pedName, fam+1,

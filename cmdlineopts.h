@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"0.99.3"
-#define RELEASE_DATE	"14 Feb 2019"
+#define VERSION_NUMBER	"1.0"
+#define RELEASE_DATE	"27 Apr 2019"
 
 class CmdLineOpts {
   public:
@@ -45,6 +45,9 @@ class CmdLineOpts {
     // User-supplied random seed OR set to the automatically generated seed
     // later
     static unsigned int randSeed;
+
+    // Print the bp file?
+    static int printBP; 
 
     // Rate of genotyping error
     static double genoErrRate;

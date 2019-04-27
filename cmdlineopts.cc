@@ -15,10 +15,11 @@
 char  *CmdLineOpts::defFile = NULL;
 char  *CmdLineOpts::mapFile = NULL;
 char  *CmdLineOpts::interfereFile = NULL;
-char  *CmdLineOpts::inVCFfile = 0;
+char  *CmdLineOpts::inVCFfile = NULL;
 char  *CmdLineOpts::outPrefix = NULL;
 bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
+int    CmdLineOpts::printBP = 0;
 double CmdLineOpts::genoErrRate = 1e-3;
 double CmdLineOpts::homErrRate = 0;
 double CmdLineOpts::missRate = 1e-3;
@@ -49,6 +50,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"intf", required_argument, NULL, INTERFERENCE},
     {"pois", no_argument, &poisson, 1},
     {"seed", required_argument, NULL, RAND_SEED},
+    {"bp", no_argument, &CmdLineOpts::printBP, 1},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
     {"founder_ids", no_argument, &CmdLineOpts::printFounderIds, 1},
     {"retain_extra", required_argument, NULL, RETAIN_EXTRA},
@@ -198,11 +200,10 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   /////////////////////////////////////////////////////////////////////////////
   // Check for errors in command line options
 
-  if (defFile == NULL || mapFile == NULL || inVCFfile == NULL ||
-							    outPrefix == NULL) {
+  if (defFile == NULL || mapFile == NULL || outPrefix == NULL) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
-    fprintf(stderr, "ERROR: def, map, input VCF, and output prefix names required\n");
+    fprintf(stderr, "ERROR: def, map, and output prefix names required\n");
     haveGoodArgs = false;
   }
   if (!poisson && !interfereFile) {
@@ -244,9 +245,6 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  -d <filename>\t\tdef file describing pedigree structures to simulate\n");
   fprintf(out, "  -m <filename>\t\tgenetic map file containing either a sex averaged map\n");
   fprintf(out, "\t\t\t  or both male and female maps (format in README.md)\n");
-  fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
-  fprintf(out, "\t\t\t  can be gzipped (with .gz extension) or not\n");
-  fprintf(out, "\t\t\t  can be an empty file when only bp output needed\n");
   fprintf(out, "  -o <prefix>\t\toutput prefix (creates <prefix>.vcf, <prefix>.bp, etc.)\n");
   fprintf(out, "\t\t\t  if input VCF is gzipped, output is too\n");
   fprintf(out, " AND EITHER:\n");
@@ -255,8 +253,15 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --pois\t\tPoisson crossover model (no interference)\n");
   fprintf(out, "\n\n");
   fprintf(out, "OPTIONS:\n");
+  fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
+  fprintf(out, "\t\t\t  can be gzipped (with .gz extension) or not\n");
+  fprintf(out, "\t\t\t  required for genetic data output\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --bp \t\t\tprint BP file (complete haplotype transmission info)\n");
+  fprintf(out, "\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
   fprintf(out, "\n");
+  fprintf(out, "  USED WITH -i:\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
   fprintf(out, "\t\t\t  genotyping error at the marker (default 0)\n");
