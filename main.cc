@@ -1873,11 +1873,11 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   fclose(out);
 }
 
-bool compInheritRec(InheritRecord &a, InheritRecord &b) {
+bool compInheritRec(const InheritRecord &a, const InheritRecord &b) {
   return a.startPos < b.startPos;
 }
 
-bool compIBDRecord(IBDRecord &a, IBDRecord &b) {
+bool compIBDRecord(const IBDRecord &a, const IBDRecord &b) {
   return (a.otherGen < b.otherGen) ||
 	 (a.otherGen == b.otherGen && a.otherBranch < b.otherBranch) ||
 	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
