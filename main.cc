@@ -1958,8 +1958,10 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
 	    int endPos = min(curRec.endPos, overIt->endPos);
 	    // Store away in the entry associated with the numerically lower id
-	    if (curRec.gen <= overIt->gen && curRec.branch <= overIt->branch &&
-		curRec.ind <= overIt->ind) {
+	    if (curRec.gen < overIt->gen ||
+		(curRec.gen == overIt->gen && curRec.branch < overIt->branch) ||
+		(curRec.gen == overIt->gen && curRec.branch == overIt->branch &&
+		 curRec.ind < overIt->ind)) {
 	      theSegs[ curRec.gen ][ curRec.branch ][ curRec.ind ].
 		emplace_back(overIt->gen, overIt->branch, overIt->ind,
 		    chrIdx, curRec.startPos, endPos);
