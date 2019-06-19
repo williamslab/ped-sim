@@ -135,10 +135,26 @@ struct IBDRecord {
   int endPos;
 };
 
-struct fileOrGZ {
-  FILE *fp;
-  gzFile gfp;
-  bool isGZ;
+template<typename IO_TYPE>
+class FileOrGZ {
+  public:
+    bool open(const char *filename, const char *mode);
+    int getline();
+    int printf(const char *format, ...);
+    int close();
+
+    static const int INIT_SIZE = 1024 * 50;
+
+    // IO_TYPE is either FILE* or gzFile;
+    IO_TYPE fp;
+
+    // for I/O:
+    char *buf;
+    size_t buf_size;
+    size_t buf_len;
+
+  private:
+    void alloc_buf();
 };
 
 
@@ -179,9 +195,10 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
 		       int ped, int fam, int curGen, int branch, int ind);
 int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
+template<typename IO_TYPE = FILE *>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 		   int branch, int ind, bool printAllGens = false,
-		   fileOrGZ *gzOut = NULL);
+		   FileOrGZ<IO_TYPE> *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
@@ -203,6 +220,7 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 		  bool sexSpecificMaps);
 void clearTheSegs(SimDetails &pedDetails, 
 		  vector< vector< vector<IBDRecord> > > *theSegs);
+template<typename IO_TYPE>
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outFileBuf,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
@@ -211,11 +229,6 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      char *famFile);
 template<typename T>
 void pop_front(vector<T> &vec);
-bool fileOrGZ_open(fileOrGZ &fgz, const char *filename, const char *mode,
-		   bool isGZ);
-int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz);
-int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...);
-int fileOrGZ_close(fileOrGZ &fgz);
 
 
 mt19937 randomGen;
@@ -367,11 +380,25 @@ int main(int argc, char **argv) {
 
   if (CmdLineOpts::inVCFfile) {
     for(int o = 0; o < 2; o++) {
-      fprintf(outs[o], "Generating output VCF... ");
+      fprintf(outs[o], "Reading input VCF meta data... ");
       fflush(outs[o]);
     }
-    makeVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
-	    /*outVCFfile=*/ outFile, geneticMap, outs);
+    // note: makeVCF() prints the status for generating the VCF file
+
+    // decide whether to use gz I/O or standard, and call makeVCF() accordingly
+    int inVCFlen = strlen(CmdLineOpts::inVCFfile);
+    if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
+      sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
+      makeVCF<gzFile>(simDetails, theSamples, totalFounderHaps,
+		      CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile,
+		      geneticMap, outs);
+    }
+    else {
+      sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
+      makeVCF<FILE *>(simDetails, theSamples, totalFounderHaps,
+		      CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile,
+		      geneticMap, outs);
+    }
     for(int o = 0; o < 2; o++)
       fprintf(outs[o], "done.\n");
   }
@@ -1782,8 +1809,10 @@ int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch) {
 
 // Prints the sample id of the given sample to <out>.
 // Returns true if the sample is a founder, false otherwise.
+template<class IO_TYPE>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
-		   int branch, int ind, bool printAllGens, fileOrGZ *gzOut) {
+		   int branch, int ind, bool printAllGens,
+		   FileOrGZ<IO_TYPE> *gzOut) {
   int thisBranchNumSpouses = getBranchNumSpouses(pedDetails, gen, branch);
   bool shouldPrint = pedDetails.numSampsToRetain[gen] > 0 || printAllGens;
 
@@ -1793,8 +1822,8 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 	fprintf(out, "%s%d_g%d-b%d-s%d", pedDetails.name, fam+1, gen+1,
 		branch+1, ind+1);
       else
-	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-s%d", pedDetails.name, fam+1,
-			gen+1, branch+1, ind+1);
+	gzOut->printf("%s%d_g%d-b%d-s%d", pedDetails.name, fam+1, gen+1,
+		      branch+1, ind+1);
     }
     return true; // is a founder
   }
@@ -1804,8 +1833,8 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 	fprintf(out, "%s%d_g%d-b%d-i%d", pedDetails.name, fam+1, gen+1,
 		branch+1, ind - thisBranchNumSpouses + 1);
       else
-	fileOrGZ_printf(*gzOut, "%s%d_g%d-b%d-i%d", pedDetails.name, fam+1,
-			gen+1, branch+1, ind - thisBranchNumSpouses + 1);
+	gzOut->printf("%s%d_g%d-b%d-i%d", pedDetails.name, fam+1, gen+1,
+		      branch+1, ind - thisBranchNumSpouses + 1);
     }
     if (gen == 0 || pedDetails.branchParents[gen][branch*2].branch < 0) {
       assert(ind - thisBranchNumSpouses == 0);
@@ -2310,111 +2339,169 @@ void clearTheSegs(SimDetails &pedDetails,
   }
 }
 
-// open <filename> either using standard I/O or as a gzipped file if <isGZ>
-bool fileOrGZ_open(fileOrGZ &fgz, const char *filename, const char *mode,
-		   bool isGZ) {
-  fgz.isGZ = isGZ;
-  if (isGZ) { // gzipped
-    fgz.fp = NULL;
-    fgz.gfp = gzopen(filename, mode);
-    if (!fgz.gfp)
-      return false;
-    else
-      return true;
+template<typename IO_TYPE>
+void FileOrGZ<IO_TYPE>::alloc_buf() {
+  buf = (char *) malloc(INIT_SIZE);
+  if (buf == NULL) {
+    fprintf(stderr, "ERROR: out of memory!\n");
+    exit(1);
   }
-  else { // standard
-    fgz.gfp = NULL;
-    fgz.fp = fopen(filename, mode);
-    if (!fgz.fp)
-      return false;
-    else
-      return true;
-  }
+  buf_size = INIT_SIZE;
+  buf_len = 0;
 }
 
-// NOTE: unlike getline() this assumes that *lineptr is non-NULL, and that
-// n > 0.
-int fileOrGZ_getline(char **lineptr, size_t *n, fileOrGZ &fgz) {
-  if (fgz.isGZ) {
-    char *buf = *lineptr;
-    int n_read = 0;
-    int c;
+// open <filename> using standard FILE *
+template<>
+bool FileOrGZ<FILE *>::open(const char *filename, const char *mode) {
+  // First allocate a buffer for I/O:
+  alloc_buf();
 
-    while ((c = gzgetc(fgz.gfp)) != EOF) {
-      // About to have read one more, so n_read + 1 needs to be less than *n.
-      // Note that we use >= not > since we need one more space for '\0'
-      if (n_read + 1 >= (int) *n) {
-	const size_t GROW = 1024;
-	buf = (char *) realloc(*lineptr, *n + GROW);
-	if (buf == NULL) {
-	  fprintf(stderr, "ERROR: out of memory!\n");
-	  exit(1);
-	}
-	*n += GROW;
-	*lineptr = buf;
+  fp = fopen(filename, mode);
+  if (!fp)
+    return false;
+  else
+    return true;
+}
+
+// open <filename> as a gzipped file
+template<>
+bool FileOrGZ<gzFile>::open(const char *filename, const char *mode) {
+  // First allocate a buffer for I/O:
+  alloc_buf();
+
+  fp = gzopen(filename, mode);
+  if (!fp)
+    return false;
+  else
+    return true;
+}
+
+template<>
+int FileOrGZ<FILE *>::getline() {
+  return ::getline(&buf, &buf_size, fp);
+}
+
+template<>
+int FileOrGZ<gzFile>::getline() {
+  int n_read = 0;
+  int c;
+
+  while ((c = gzgetc(fp)) != EOF) {
+    // About to have read one more, so n_read + 1 needs to be less than *n.
+    // Note that we use >= not > since we need one more space for '\0'
+    if (n_read + 1 >= (int) buf_size) {
+      const size_t GROW = 1024;
+      char *tmp_buf = (char *) realloc(buf, buf_size + GROW);
+      if (tmp_buf == NULL) {
+	fprintf(stderr, "ERROR: out of memory!\n");
+	exit(1);
       }
-      buf[n_read] = (char) c;
-      n_read++;
-      if (c == '\n')
-	break;
+      buf_size += GROW;
+      buf = tmp_buf;
     }
-
-    if (c == EOF && n_read == 0)
-      return -1;
-
-    buf[n_read] = '\0';
-
-    return n_read;
+    buf[n_read] = (char) c;
+    n_read++;
+    if (c == '\n')
+      break;
   }
-  else {
-    return getline(lineptr, n, fgz.fp);
-  }
+
+  if (c == EOF && n_read == 0)
+    return -1;
+
+  buf[n_read] = '\0';
+
+  return n_read;
 }
 
-int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...) {
+template<>
+int FileOrGZ<FILE *>::printf(const char *format, ...) {
   va_list args;
   int ret;
   va_start(args, format);
-  if (fgz.isGZ) {
-    ret = gzvprintf(fgz.gfp, format, args);
-  }
-  else {
-    ret = vfprintf(fgz.fp, format, args);
-  }
+
+  ret = vfprintf(fp, format, args);
+
   va_end(args);
   return ret;
 }
 
-int fileOrGZ_close(fileOrGZ &fgz) {
-  if (fgz.isGZ) {
-    return gzclose(fgz.gfp);
+template<>
+int FileOrGZ<gzFile>::printf(const char *format, ...) {
+  va_list args;
+  int ret;
+  va_start(args, format);
+
+  // NOTE: one can get automatic parallelization (in a second thread) for
+  // gzipped output by opening a pipe to gzip (or bgzip). For example:
+  //FILE *pipe = popen("gzip > output.vcf.gz", "w");
+  // Can then fprintf(pipe, ...) as if it were a normal file.
+
+  // gzvprintf() is slower than the code below that buffers the output.
+  // Saw 13.4% speedup for processing a truncated VCF with ~50k lines and
+  // 8955 samples.
+//  ret = gzvprintf(fp, format, args);
+  ret = vsnprintf(buf + buf_len, buf_size - buf_len, format, args);
+  if (ret < 0) {
+    printf("ERROR: could not print\n");
+    perror("printf");
+    exit(10);
   }
-  else {
-    return fclose(fgz.fp);
+
+  if (buf_len + ret > buf_size - 1) {
+    // didn't fit the text in buf
+    // first print what was in buf before the vsnprintf() call:
+    gzwrite(fp, buf, buf_len);
+    buf_len = 0;
+    // now ensure that redoing vsnprintf() will fit in buf:
+    if ((size_t) ret > buf_size - 1) {
+      do { // find the buffer size that fits the last vsnprintf() call
+	buf_size += INIT_SIZE;
+      } while ((size_t) ret > buf_size - 1);
+      free(buf);
+      buf = (char *) malloc(buf_size);
+    }
+    // redo:
+    ret = vsnprintf(buf + buf_len, buf_size - buf_len, format, args);
   }
+
+  buf_len += ret;
+  if (buf_len >= buf_size - 1024) { // within a tolerance of MAX_BUF?
+    // flush:
+    gzwrite(fp, buf, buf_len);
+    buf_len = 0;
+  }
+
+  va_end(args);
+  return ret;
+}
+
+template<>
+int FileOrGZ<FILE *>::close() {
+  assert(buf_len == 0);
+  // should free buf, but I know the program is about to end, so won't
+  return fclose(fp);
+}
+
+template<>
+int FileOrGZ<gzFile>::close() {
+  if (buf_len > 0)
+    gzwrite(fp, buf, buf_len);
+  // should free buf, but I know the program is about to end, so won't
+  return gzclose(fp);
 }
 
 // Given the simulated break points for individuals in each pedigree/family
 // stored in <theSamples> and other necessary information, reads input VCF
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
+template<typename IO_TYPE>
 void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, char *inVCFfile, char *outFileBuf,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     FILE *outs[2]) {
-  int inVCFlen = strlen(inVCFfile);
-  bool isGZ = false;
-  if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
-    isGZ = true;
-    sprintf(outFileBuf, "%s.vcf.gz", CmdLineOpts::outPrefix);
-  }
-  else {
-    sprintf(outFileBuf, "%s.vcf", CmdLineOpts::outPrefix);
-  }
-
   // open input VCF file:
-  fileOrGZ in;
-  bool success = fileOrGZ_open(in, inVCFfile, "r", isGZ);
+  FileOrGZ<IO_TYPE> in;
+  bool success = in.open(inVCFfile, "r");
   if (!success) {
     printf("\nERROR: could not open input VCF file %s!\n", inVCFfile);
     perror("open");
@@ -2422,8 +2509,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 
   // open output VCF file:
-  fileOrGZ out;
-  success = fileOrGZ_open(out, outFileBuf, "w", isGZ);
+  FileOrGZ<IO_TYPE> out;
+  success = out.open(outFileBuf, "w");
   if (!success) {
     printf("\nERROR: could not open output VCF file %s!\n", outFileBuf);
     perror("open");
@@ -2435,8 +2522,6 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bernoulli_distribution setMissing( CmdLineOpts::missRate );
   bernoulli_distribution isPseudoHap( CmdLineOpts::pseudoHapRate );
 
-  size_t bytesRead = 1024;
-  char *buffer = (char *) malloc(bytesRead + 1);
   // technically tab and newline; we want the latter so that the last sample id
   // on the header line doesn't include the newline character in it
   const char *tab = "\t\n";
@@ -2470,19 +2555,19 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
 
-  while (fileOrGZ_getline(&buffer, &bytesRead, in) >= 0) { // lines of input VCF
-    if (buffer[0] == '#' && buffer[1] == '#') {
+  while (in.getline() >= 0) { // lines of input VCF
+    if (in.buf[0] == '#' && in.buf[1] == '#') {
       // header line: print to output
-      fileOrGZ_printf(out, "%s", buffer);
+      out.printf("%s", in.buf);
       continue;
     }
 
-    if (buffer[0] == '#') {
+    if (in.buf[0] == '#') {
       // header line with sample ids
 
       // skip all the header fields relating to meta-data:
       char *saveptr;
-      char *token = strtok_r(buffer, tab, &saveptr);
+      char *token = strtok_r(in.buf, tab, &saveptr);
       for(int i = 1; i < 9; i++)
 	token = strtok_r(NULL, tab, &saveptr);
 
@@ -2570,8 +2655,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       // Now print the header line indicating fields and sample ids for the
       // output VCF
-      fileOrGZ_printf(out,
-		       "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
+      out.printf("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
 
       // print sample ids:
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
@@ -2592,7 +2676,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 				numNonFounders);
 		int numPersons = numNonFounders + numFounders;
 		for(int ind = 0; ind < numPersons; ind++) {
-		  fileOrGZ_printf(out, "\t");
+		  out.printf("\t");
 		  bool curIsFounder = printSampleId(NULL, simDetails[ped],
 						    fam, gen, branch, ind,
 						    /*printAllGens=*/ false,
@@ -2615,10 +2699,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       // print the ids for the --retain_extra samples:
       for(unsigned int i = 0; i < numToRetain; i++) {
 	int sampIdx = extraSamples[i];
-	fileOrGZ_printf(out, "\t%s", sampleIds[ sampIdx ]);
+	out.printf("\t%s", sampleIds[ sampIdx ]);
       }
 
-      fileOrGZ_printf(out, "\n");
+      out.printf("\n");
 
       for(int o = 0; o < 2; o++) {
 	if (idOut)
@@ -2634,7 +2718,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     }
 
     char *saveptr;
-    char *chrom = strtok_r(buffer, tab, &saveptr);
+    char *chrom = strtok_r(in.buf, tab, &saveptr);
 
     if (strcmp(chrom, chrName) != 0) {
       if (gotSomeData) {
@@ -2735,9 +2819,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     }
 
     // Print this line to the output file
-    fileOrGZ_printf(out, "%s\t%s", chrom, posStr);
+    out.printf("%s\t%s", chrom, posStr);
     for(int i = 0; i < 7; i++)
-      fileOrGZ_printf(out, "\t%s", otherFields[i]);
+      out.printf("\t%s", otherFields[i]);
 
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
       int numFam = simDetails[ped].numFam;
@@ -2762,7 +2846,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		// set to missing (according to the rate set by the user)?
 		if (setMissing( randomGen )) {
 		  for(int h = 0; h < 2; h++)
-		    fileOrGZ_printf(out, "%c.", betweenAlleles[h]);
+		    out.printf("%c.", betweenAlleles[h]);
 		  continue; // done printing genotype data for this sample
 		}
 
@@ -2786,12 +2870,12 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    // pseudo-haploid; pick one haplotype to print
 		    int printHap = coinFlip(randomGen);
 		    for(int h = 0; h < 2; h++)
-		      fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
-				      founderHaps[ curFounderHaps[printHap] ]);
+		      out.printf("%c%s", betweenAlleles[h],
+				 founderHaps[ curFounderHaps[printHap] ]);
 		  }
 		  else { // not pseudo-haploid => both alleles missing:
 		    for(int h = 0; h < 2; h++)
-		      fileOrGZ_printf(out, "%c.", betweenAlleles[h]);
+		      out.printf("%c.", betweenAlleles[h]);
 		  }
 		  continue;
 		}
@@ -2826,12 +2910,12 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  }
 
 		  for(int h = 0; h < 2; h++)
-		    fileOrGZ_printf(out, "%c%d", betweenAlleles[h],alleles[h]);
+		    out.printf("%c%d", betweenAlleles[h],alleles[h]);
 		}
 		else { // no error: print alleles from original haplotypes
 		  for(int h = 0; h < 2; h++)
-		    fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
-				     founderHaps[ curFounderHaps[h] ]);
+		    out.printf("%c%s", betweenAlleles[h],
+			       founderHaps[ curFounderHaps[h] ]);
 		}
 	      }
 	    }
@@ -2840,16 +2924,14 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     for(unsigned int i = 0; i < numToRetain; i++) {
       int sampIdx = extraSamples[i];
       for(int h = 0; h < 2; h++)
-	fileOrGZ_printf(out, "%c%s", betweenAlleles[h],
-			 hapAlleles[ 2*sampIdx + h ]);
+	out.printf("%c%s", betweenAlleles[h], hapAlleles[ 2*sampIdx + h ]);
     }
 
-    fileOrGZ_printf(out, "\n");
+    out.printf("\n");
   }
 
-  free(buffer);
-  fileOrGZ_close(out);
-  fileOrGZ_close(in);
+  out.close();
+  in.close();
 }
 
 // print fam format file with the pedigree structure of all individuals included
