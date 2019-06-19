@@ -2376,14 +2376,7 @@ int fileOrGZ_printf(fileOrGZ &fgz, const char *format, ...) {
   int ret;
   va_start(args, format);
   if (fgz.isGZ) {
-    char *buf;
-    ret = vasprintf(&buf, format, args);
-    if (ret < 0)
-      return ret;
-    size_t len = strlen(buf);
-    ret = gzwrite(fgz.gfp, buf, len);
-    free(buf);
-    return ret;
+    ret = gzvprintf(fgz.gfp, format, args);
   }
   else {
     ret = vfprintf(fgz.fp, format, args);
