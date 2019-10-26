@@ -727,6 +727,12 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   }
 
   fclose(in);
+
+  // don't need the spouse dependency sets anymore:
+  for(unsigned int i = 0; i < spouseDependencies.size(); i++)
+    if (spouseDependencies[i] != NULL)
+      delete spouseDependencies[i];
+
 }
 
 
@@ -990,7 +996,6 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 
   thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
 
-  spouseDependencies.clear();
   sexConstraints[prevGen] = new int[numBranches[prevGen]];
   for(int i = 0; i < numBranches[prevGen]; i++)
     sexConstraints[prevGen][i] = -1;
@@ -1225,10 +1230,6 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
   //       are no longer used, but the size of the spouseDependencies list
   //       still accounts for them.
   assert(spouseDependencies.size() % 2 == 0);
-  // don't need the sets anymore:
-  for(unsigned int i = 0; i < spouseDependencies.size(); i++)
-    if (spouseDependencies[i] != NULL)
-      delete spouseDependencies[i];
 
   assignDefaultBranchParents(numBranches[prevGen], numBranches[curGen],
 			     thisGenBranchParents, prevGen, prevGenSpouseNum,
@@ -1279,6 +1280,8 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
 
     // since <otherPar> isn't in a spouse set yet, it definitely shouldn't be in
     // the same spouse set as <assignedPar>
+    assert((unsigned int) assignedSetIdx < spouseDependencies.size());
+    assert(spouseDependencies[ assignedSetIdx ] != NULL);
     assert(spouseDependencies[ assignedSetIdx ]->find( pars[otherPar] ) ==
 				    spouseDependencies[assignedSetIdx]->end());
 
