@@ -2689,7 +2689,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       shuffle(shuffHaps.begin(), shuffHaps.end(), randomGen);
 
       if (numInputSamples < totalFounderHaps / 2) {
-	fprintf(stderr, "\nERROR: need %d founders, but input only contains %d\n",
+	fprintf(stderr, "\nERROR: need %d founders, but input only contains %d samples\n",
 		totalFounderHaps / 2, numInputSamples);
 	exit(5);
       }
