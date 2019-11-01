@@ -53,6 +53,10 @@ struct SimDetails {
     i1Sex = i1FixedSex;
     branchNumSpouses = spouses;
     name = new char[ strlen(theName) + 1 ];
+    if (name == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
     strcpy(name, theName);
   }
   int numFam;
@@ -245,6 +249,10 @@ int main(int argc, char **argv) {
 
   int outPrefixLen = strlen(CmdLineOpts::outPrefix);
   char *outFile = new char[ outPrefixLen + 7 + 1 ]; //+7 for .vcf.gz, + 1 for \0
+  if (outFile == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
 
   // open the log file
   sprintf(outFile, "%s.log", CmdLineOpts::outPrefix);
@@ -466,6 +474,10 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   const char *delim = " \t\n";
 
   int line = 0;
@@ -547,6 +559,12 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       curBranchParents = new Parent*[curNumGen];
       curSexConstraints = new int*[curNumGen];
       curBranchNumSpouses = new int*[curNumGen];
+      if (curNumSampsToRetain == NULL || curNumBranches == NULL ||
+	  curBranchParents == NULL || curSexConstraints == NULL ||
+	  curBranchNumSpouses == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
       if (lastReadGen >= 0)
 	lastReadGen = -1; // reset
 
@@ -744,6 +762,10 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     char *mapFile, bool &sexSpecificMaps) {
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   const char *delim = " \t\n";
 
   FILE *in = fopen(mapFile, "r");
@@ -776,8 +798,16 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
     // need a new entry in <geneticMap> for a new chrom?
     if (curChr == NULL || strcmp(chrom, curChr) != 0) {
       curChr = (char *) malloc(strlen(chrom) + 1);
+      if (curChr == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
       strcpy(curChr, chrom);
       curMap = new vector<PhysGeneticPos>;
+      if (curMap == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
       geneticMap.emplace_back(curChr, curMap);
     }
 
@@ -830,6 +860,10 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   const char *delim = " \t\n";
 
   FILE *in = fopen(interfereFile, "r");
@@ -929,8 +963,13 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     multFactor = 1; // for branches that survive, map prev branch i to cur i
 
   // allocate space to store the parents of each branch
-  if (thisGenBranchParents == NULL)
+  if (thisGenBranchParents == NULL) {
     thisGenBranchParents = new Parent[2 * thisGenNumBranches];
+    if (thisGenBranchParents == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
+  }
 
   for(int prevB = 0; prevB < prevGenNumBranches; prevB++) {
     if (prevB >= thisGenNumBranches)
@@ -986,6 +1025,10 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 
   assert(prevGenSpouseNum == NULL);
   prevGenSpouseNum = new int[numBranches[prevGen]];
+  if (prevGenSpouseNum == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   for(int b = 0; b < numBranches[prevGen]; b++)
     // What number have we assigned through for founder spouses of individuals
     // in the previous generation? Note that founders have an id (in the code
@@ -995,8 +1038,16 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
     prevGenSpouseNum[b] = 0;
 
   thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
+  if (thisGenBranchParents == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
 
   sexConstraints[prevGen] = new int[numBranches[prevGen]];
+  if (sexConstraints[prevGen] == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   for(int i = 0; i < numBranches[prevGen]; i++)
     sexConstraints[prevGen][i] = -1;
 
@@ -1256,6 +1307,10 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
     set<Parent,ParentComp> *sets[2];
     for(int p = 0; p < 2; p++) {
       sets[p] = new set<Parent,ParentComp>();
+      if (sets[p] == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
       sets[p]->insert( pars[p] );
       // which index in spouseDependencies is the set corresponding to this
       // parent stored in? As we're about to add it, just below this, the
@@ -1414,6 +1469,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
   vector<int> sexAssignments;
 
   theSamples = new Person****[simDetails.size()];
+  if (theSamples == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
@@ -1428,15 +1487,27 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     // Allocate space and make Person objects for all those we will simulate,
     // assigning sex if <sexSpecificMaps> is true
     theSamples[ped] = new Person***[numFam];
+    if (theSamples[ped] == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
     for (int fam = 0; fam < numFam; fam++) {
 
       // ready to make sex assignments for this family
       sexAssignments.clear();
 
       theSamples[ped][fam] = new Person**[numGen];
+      if (theSamples[ped][fam] == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
       for(int curGen = 0; curGen < numGen; curGen++) {
 
 	theSamples[ped][fam][curGen] = new Person*[ numBranches[curGen] ];
+	if (theSamples[ped][fam][curGen] == NULL) {
+	  printf("ERROR: out of memory");
+	  exit(5);
+	}
 
 	// allocate Persons for each branch of <curGen>, assign their sex,
 	// and do the simulation for these allocated individuals
@@ -1455,6 +1526,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  // individuals are founders.
 	  int numPersons = numFounders + numNonFounders;
 	  theSamples[ped][fam][curGen][branch] = new Person[numPersons];
+	  if (theSamples[ped][fam][curGen][branch] == NULL) {
+	    printf("ERROR: out of memory");
+	    exit(5);
+	  }
 
 	  if (sexSpecificMaps) {
 	    int branchAssign;
@@ -1943,6 +2018,10 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   // place to store IBD segments identified below
   vector< vector< vector<IBDRecord> > > *theSegs =
 			  new vector< vector< vector<IBDRecord> > >[maxNumGens];
+  if (theSegs == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   int curPed = -1;
   int curFam = -1;
 
@@ -2346,7 +2425,7 @@ template<typename IO_TYPE>
 void FileOrGZ<IO_TYPE>::alloc_buf() {
   buf = (char *) malloc(INIT_SIZE);
   if (buf == NULL) {
-    fprintf(stderr, "ERROR: out of memory!\n");
+    printf("ERROR: out of memory\n");
     exit(1);
   }
   buf_size = INIT_SIZE;
@@ -2462,6 +2541,10 @@ int FileOrGZ<gzFile>::printf(const char *format, ...) {
       } while ((size_t) ret > buf_size - 1);
       free(buf);
       buf = (char *) malloc(buf_size);
+      if (buf == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
     }
     // redo:
     ret = vsnprintf(buf + buf_len, buf_size - buf_len, format, args);
@@ -2541,6 +2624,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   char **hapAlleles = NULL; // stores all alleles from input sample
   char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
+  if (founderHaps == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
 
   // iterate over chromosomes in the genetic map
   unsigned int chrIdx = 0; // index of current chromosome number;
@@ -2555,6 +2642,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   vector<int> extraSamples; // Sample indexes to print for --retain_extra
   // map from haplotype index / 2 to sample_index
   int *founderSamples = new int[totalFounderHaps / 2];
+  if (founderSamples == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
 
@@ -2581,6 +2672,10 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       }
       numInputSamples = sampleIds.size();
       hapAlleles = new char*[numInputSamples * 2]; // 2 for diploid samples
+      if (hapAlleles == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
 
       // Next generate an ordered list of haplotype indexes (2 * sample_index)
       // and randomly shuffle it. The index of shuffHaps is the sample index
