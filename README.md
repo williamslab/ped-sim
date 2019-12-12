@@ -21,9 +21,10 @@ Table of Contents
       * [Sample ids for simulated individuals](#samp-ids)
       * [Output BP file](#output-bp-file)
       * [Extra notes: sex-specific maps](#extra-notes-sex-specific-maps)
-      * [Citing Ped-sim](#citing-ped-sim)
+      * [Citing Ped-sim](#citing-ped-sim-and-related-papers)
       * [Other optional arguments](#other-optional-arguments)
          * [Specifying random seed](#specifying-random-seed---seed-)
+         * [Using specified crossovers](#sing-specified-set-of-crossovers---fixed_co-filename)
          * [Genotyping error rate](#genotyping-error-rate---err_rate-)
          * [Rate of opposite homozygote errors](#rate-of-opposite-homozygote-errors---err_hom_rate-)
          * [Missingness rate](#missingness-rate---miss_rate-)
@@ -364,7 +365,7 @@ female parents.
 correspond to the female genetic position if given.
 
 A high resolution human sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
-and is described in [Bhérer, et al. 2017](http://dx.doi.org/10.1038/ncomms14994).
+and is described in [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
 To generate a map file in the format the simulator requires with both male and
 female genetic positions, run the following bash commands:
 
@@ -407,11 +408,11 @@ supports are below.
 
 ### Crossover interference model: `--intf <file>`
 
-The `--intf <file>` option simulates from the [Housworth and Stahl 2003](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
+The `--intf <file>` option simulates from the [Housworth and Stahl (2003)](http://www.cell.com/ajhg/fulltext/S0002-9297%2807%2963904-4)
 crossover model. This model requires specification of `nu` and `p`
 parameters for each chromosome. The `interference` subdirectory in the
 repository contains a file `nu_p_campbell.tsv` with estimates of these
-parameters for the human autosomes from [Campbell et al. 2015](https://www.nature.com/articles/ncomms7260).
+parameters for the human autosomes from [Campbell et al. (2015)](https://www.nature.com/articles/ncomms7260).
 
 As with the VCF, the interference file must list chromosomes in the same order
 as the genetic map, and the chromosome names must be identical to the genetic
@@ -442,7 +443,7 @@ Ped-sim generates a list of all simulated IBD segments among relative pairs
 whenever both samples have been requested to be printed. This file has nine
 fields:
 
-    [sample 1] [sample 2] [chromosome] [physical position start] [physical positoin end] [IBD type] [genetic position start] [genetic position end]
+    [sample 1] [sample 2] [chromosome] [physical position start] [physical position end] [IBD type] [genetic position start] [genetic position end]
 
 The IBD type is one of `IBD1`, `IBD2` or `HBD`. `IBD1` indicates the pair shares
 one IBD segment (on one of their two haplotypes) in the interval, and `IBD2`
@@ -450,6 +451,8 @@ indicates the pair shares two segments IBD in the region. `HBD` stands for
 homomozygous by descent, also called a run of homozygosity (ROH), which is a
 region where an individual is IBD with themselves. The latter only occurs in
 the presence of inbreeding.
+
+------------------------------------------------------
 
 Output VCF file
 ---------------
@@ -560,10 +563,14 @@ in the same run.
 
 ------------------------------------------------------
 
-Citing Ped-sim
---------------
+Citing Ped-sim and related papers
+---------------------------------
 
-If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://www.biorxiv.org/content/early/2019/01/22/527655).
+If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://www.biorxiv.org/content/early/2019/01/22/527655);
+if you use the Refined genetic map (named `refined_mf.simmap` in the example
+code), please cite [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
+and if you use the `interfere/nu_p_campbell.tsv` interference parameters, please
+cite [Campbell et al. (2015)](https://www.nature.com/articles/ncomms7260).
 
 ------------------------------------------------------
 
@@ -575,6 +582,30 @@ Other optional arguments
 The `--seed <#>` option enables specification of the random seed to be used.
 Without this option, the simulator generates a random seed using the current
 time (including microseconds).
+
+### Using specified set of crossovers: `--fixed_co <filename>`
+
+The `--fixed_co <filename>` option simulates from crossovers provided in the
+indicated file, which may be from real crossover data. The format of the file
+is one row per crossover, with the following information on each line:
+
+    [proband id] [maternal or paternal] [chromosome] [crossover physical position]
+
+Ped-sim ignores any extra fields that follow these four. The first field can
+be any string (with no white space), and field two must be either `M` or `P`.
+For a given meiosis, the proband id and the maternal/paternal meiosis type must
+be the same for each crossover. The simulator randomly assigns crossovers from
+a given proband and maternal/paternal type to each meiosis, matching the sex of
+the parent undergoing meiosis to the maternal/paternal type. It uses all
+crossovers from a given meiosis except those outside the range of the input
+genetic map.
+
+**The crossovers must be sorted,** first by proband id, second by
+maternal/paternal type (so that all the crossovers from a given meiosis appear
+in succession), third by chromosome name, and last by physical position. As with
+other files, the chromosomes must be listed in the same order as the input VCF
+(or genetic map if not using a VCF), and the chromosome names must also be
+identical to those other files.
 
 ### Genotyping error rate: `--err_rate <#>`
 

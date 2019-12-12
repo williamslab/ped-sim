@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.0.3"
-#define RELEASE_DATE	"31 Oct 2019"
+#define VERSION_NUMBER	"1.0.4"
+#define RELEASE_DATE	"11 Dec 2019"
 
 class CmdLineOpts {
   public:
@@ -71,6 +71,10 @@ class CmdLineOpts {
 
     // Print the original ids of the founders?
     static int printFounderIds;
+
+    // Fixed COs input file
+    static char *fixedCOfile;
+
 };
 
 #endif // CMDOPTIONS_H

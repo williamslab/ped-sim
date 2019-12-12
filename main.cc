@@ -94,9 +94,15 @@ struct Segment {
 
 typedef vector<Segment> Haplotype;
 struct Person {
-  Person() { sex = 0; } // by default assume using sex-averaged map: all 0
+  Person() {
+    // by default assume using sex-averaged map: all 0
+    sex = 0;
+    // by default assume not using fixed COs
+    fixedCOidxs[0] = fixedCOidxs[1] = UINT_MAX;
+  }
   int sex;
   vector<Haplotype> haps[2]; // haplotype pair for <this>
+  unsigned int fixedCOidxs[2];
 };
 
 // For the <hapCarriers> structure -- stores the sample id that inherited (or
@@ -161,6 +167,19 @@ class FileOrGZ {
     void alloc_buf();
 };
 
+struct FixedCOs {
+  static void read(const char *fixedCOfile,
+		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap);
+
+  static vector<int> & getCOs(int sex, unsigned int idx, unsigned int chrIdx) {
+    return theCOs[sex][idx][chrIdx];
+  }
+
+  // Array of size 2: one set for males, one for females
+  // Outer vector is for individuals, next level for chromosomes, and the last
+  // stores a vector of positions of COs
+  static vector< vector< vector<int> > > theCOs[2];
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function decls
@@ -187,9 +206,9 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
 		   vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 		   bool &sexSpecificMaps);
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
-	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
-	      bool sexSpecificMaps, vector<COInterfere> &coIntf,
-	      vector< vector< vector<InheritRecord> > > &hapCarriers);
+	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
+	     bool sexSpecificMaps, vector<COInterfere> &coIntf,
+	     vector< vector< vector<InheritRecord> > > &hapCarriers);
 void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
 		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
@@ -197,7 +216,13 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
 		       vector<COInterfere> &coIntf, unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
-		       int ped, int fam, int curGen, int branch, int ind);
+		       int ped, int fam, int curGen, int branch, int ind,
+		       unsigned int fixedCOidxs[2]);
+void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
+	      int switchPos, unsigned int curSegIdx[2], int &curHap,
+	      unsigned int chrIdx,
+	      vector< vector< vector<InheritRecord> > > &hapCarriers,
+	      int ped, int fam, int curGen, int branch, int ind);
 int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
 template<typename IO_TYPE = FILE *>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
@@ -238,6 +263,9 @@ void pop_front(vector<T> &vec);
 mt19937 randomGen;
 uniform_int_distribution<int> coinFlip(0,1);
 exponential_distribution<double> crossoverDist(1.0);
+
+vector< vector< vector<int> > > FixedCOs::theCOs[2];
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -336,6 +364,10 @@ int main(int argc, char **argv) {
   if (CmdLineOpts::interfereFile) {
     readInterfere(coIntf, CmdLineOpts::interfereFile, geneticMap,
 		  sexSpecificMaps);
+  }
+
+  if (CmdLineOpts::fixedCOfile) {
+    FixedCOs::read(CmdLineOpts::fixedCOfile, geneticMap);
   }
 
   // The first index is the pedigree number corresponding to the description of
@@ -797,7 +829,7 @@ void readMap(vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 
     // need a new entry in <geneticMap> for a new chrom?
     if (curChr == NULL || strcmp(chrom, curChr) != 0) {
-      curChr = (char *) malloc(strlen(chrom) + 1);
+      curChr = new char[ strlen(chrom) + 1 ];
       if (curChr == NULL) {
 	printf("ERROR: out of memory");
 	exit(5);
@@ -948,6 +980,95 @@ void readInterfere(vector<COInterfere> &coIntf, char *interfereFile,
   }
 
   free(buffer);
+  fclose(in);
+}
+
+// Given a file <fixedCOfile> containing sets of crossovers labeled paternal and
+// maternal, reads in the crossovers for use in simulating
+void FixedCOs::read(const char *fixedCOfile,
+		  vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap) {
+  size_t bytesRead = 1024, bytesReadOther = 1024;
+  char *buffer = (char *) malloc(bytesRead + 1);
+  char *bufferOther = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL || bufferOther == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
+  const char *delim = " \t\n";
+
+  FILE *in = fopen(fixedCOfile, "r");
+  if (!in) {
+    fprintf(stderr, "ERROR: could not open fixed crossover file %s!\n", fixedCOfile);
+    exit(1);
+  }
+
+  char *lastId = NULL;
+  int chrIdx = -1; // index of current chromosome
+  int lastPM_idx = -1;
+  while (getline(&buffer, &bytesRead, in) >= 0) {
+    char *id, *pat_mat, *chrom, *posStr;
+    char *saveptr, *endptr;
+
+    // get sample id, paternal/maternal type
+    id = strtok_r(buffer, delim, &saveptr);
+    pat_mat = strtok_r(NULL, delim, &saveptr);
+
+    int pm_idx = (pat_mat[0] == 'M') ? 1 : 0; // 1 for maternal, 0 for paternal
+
+    if (pm_idx != lastPM_idx || lastId == NULL || strcmp(lastId, id) != 0) {
+      if (lastId) {
+	while (chrIdx < (int) geneticMap.size() - 1) {
+	  // new (empty) chr:
+	  theCOs[lastPM_idx].back().emplace_back();
+	  chrIdx++;
+	}
+      }
+      // new person:
+      theCOs[pm_idx].emplace_back();
+      assert(theCOs[pm_idx].size() < UINT_MAX);
+      chrIdx = -1; // reset
+    }
+
+    // get chromosome
+    chrom = strtok_r(NULL, delim, &saveptr);
+
+    while (chrIdx == -1 || strcmp(geneticMap[chrIdx].first, chrom) != 0) {
+      // new chr:
+      theCOs[pm_idx].back().emplace_back();
+      chrIdx++;
+      if (chrIdx > (int) geneticMap.size()) {
+	fprintf(stderr, "ERROR: chromosome %s in %s does not match any chromosome in genetic map\n",
+		chrom, fixedCOfile);
+      }
+    }
+
+    // get position
+    posStr = strtok_r(NULL, delim, &saveptr);
+    int pos = strtol(posStr, &endptr, 10);
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR: column three of %s contains %s, which cannot be converted to an integer\n",
+	  fixedCOfile, posStr);
+      exit(2);
+    }
+
+    if (pos >= geneticMap[chrIdx].second->front().physPos &&
+	pos <= geneticMap[chrIdx].second->back().physPos)
+      // add to COs so long as the position is within the range of the genetic
+      // map
+      theCOs[pm_idx].back().back().push_back( pos );
+
+    // Swap values for next round:
+    lastId = id;
+    lastPM_idx = pm_idx;
+
+    char *tmpBuf = buffer;
+    buffer = bufferOther;
+    bufferOther = tmpBuf;
+    size_t tmpBytesRead = bytesRead;
+    bytesRead = bytesReadOther;
+    bytesReadOther = tmpBytesRead;
+  }
+
   fclose(in);
 }
 
@@ -1468,6 +1589,23 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
   // opposite sex.
   vector<int> sexAssignments;
 
+  // For randomly assigning a set of fixed (read in, probably from real data)
+  // COs to each person. We'll shuffle a list of indexes of fixed crossovers and
+  // assign one to each simulated non-founder (for the COs they inherit) in turn
+  vector<unsigned int> randFixedCOs[2];
+  int curFixedCOidx = -1; // initially: -1 indicates we're not using fixed COs
+  if (!FixedCOs::theCOs[0].empty()) {
+    curFixedCOidx = 0; // will assign fixed COs to non-founders
+
+    for(int s = 0; s < 2; s++) {
+      unsigned int numFixedCOs = FixedCOs::theCOs[s].size();
+      for(unsigned int i = 0; i < numFixedCOs; i++) {
+	randFixedCOs[s].push_back(i);
+      }
+      shuffle(randFixedCOs[s].begin(), randFixedCOs[s].end(), randomGen);
+    }
+  }
+
   theSamples = new Person****[simDetails.size()];
   if (theSamples == NULL) {
     printf("ERROR: out of memory");
@@ -1680,12 +1818,19 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 		// Make space for this haplotype in the current sample:
 		curFamSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
-		Haplotype &toGen = curFamSamps[curGen][branch][ind].
-							  haps[hapIdx].back();
+		Person &thePerson = curFamSamps[curGen][branch][ind];
+		if (p == 0 && chrIdx == 0 && curFixedCOidx >= 0) {
+		  // assign fixed COs for <thePerson>:
+		  for(int s = 0; s < 2; s++)
+		    thePerson.fixedCOidxs[s] = randFixedCOs[s][curFixedCOidx];
+		  curFixedCOidx++; // next person's indexes
+		}
+		Haplotype &toGen = thePerson.haps[hapIdx].back();
 		generateHaplotype(toGen, theParent, curMap, coIntf, chrIdx,
 				  hapCarriers,
 				  (numSampsToRetain[curGen] > 0) ? ped : -1,
-				  fam, curGen, branch, ind);
+				  fam, curGen, branch, ind,
+				  thePerson.fixedCOidxs);
 	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
 	    } // <ind>
 	  } // <geneticMap> (chroms)
@@ -1748,7 +1893,8 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<PhysGeneticPos> *curMap,
 		       vector<COInterfere> &coIntf, unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
-		       int ped, int fam, int curGen, int branch, int ind) {
+		       int ped, int fam, int curGen, int branch, int ind,
+		       unsigned int fixedCOidxs[2]) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
   unsigned int curSegIdx[2] = { 0, 0 };
@@ -1768,98 +1914,77 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   // Locations of the crossovers
   vector<double> coLocations; // in Morgans
 
-  if (CmdLineOpts::interfereFile) {
-    coIntf[chrIdx].simStahl(coLocations, parent.sex, randomGen);
-  }
-  else {
-    double lastPos = 0.0; // position of last crossover
-    while (true) { // simulate until crossover is past chromosome end
-      double curPos = lastPos + crossoverDist(randomGen);
-      if (curPos >= chrLength / 100)
-	break;
-      coLocations.push_back(curPos);
-      lastPos = curPos;
-    }
-  }
-
-  // initially assume we'll recombine between first and positions with map info
-  int switchIdx = 0;
+  // first segment starts at first valid map position
   int nextSegStart = curMap->front().physPos;
 
-  int mapNumPos = curMap->size();
-  for(auto it = coLocations.begin(); it != coLocations.end(); it++) {
-    // Multiply by 100 to get cM:
-    double cMPosNextCO = firstcMPos + (*it * 100);
-
-    int left = 0, right = curMap->size() - 1;
-    while (true) {
-      if (right - left == 1) {
-	switchIdx = left; // want <switchIdx> <= than <cMPosNextCO>
-	break;
-      }
-      int mid = (left + right) / 2;
-      if ((*curMap)[mid].mapPos[mapIdx] < cMPosNextCO)
-	left = mid;
-      else if ((*curMap)[mid].mapPos[mapIdx] > cMPosNextCO)
-	right = mid;
-      else {
-	// equal: exact map position
-	switchIdx = mid;
-	break;
+  if (fixedCOidxs[0] == UINT_MAX) { // no fixed crossovers -- simulate:
+    if (CmdLineOpts::interfereFile) {
+      coIntf[chrIdx].simStahl(coLocations, parent.sex, randomGen);
+    }
+    else {
+      double lastPos = 0.0; // position of last crossover
+      while (true) { // simulate until crossover is past chromosome end
+	double curPos = lastPos + crossoverDist(randomGen);
+	if (curPos >= chrLength / 100)
+	  break;
+	coLocations.push_back(curPos);
+	lastPos = curPos;
       }
     }
-    if (switchIdx == mapNumPos - 1)
-      break; // let code below this while loop insert the final segments
 
-    // get physical position using linear interpolation:
-    double frac = (cMPosNextCO - (*curMap)[switchIdx].mapPos[mapIdx]) /
+    // initially assume we'll recombine between first and second positions with
+    // map info
+    int switchIdx = 0;
+
+    int mapNumPos = curMap->size();
+    for(auto it = coLocations.begin(); it != coLocations.end(); it++) {
+      // Multiply by 100 to get cM:
+      double cMPosNextCO = firstcMPos + (*it * 100);
+
+      int left = 0, right = curMap->size() - 1;
+      while (true) {
+	if (right - left == 1) {
+	  switchIdx = left; // want <switchIdx> <= than <cMPosNextCO>
+	  break;
+	}
+	int mid = (left + right) / 2;
+	if ((*curMap)[mid].mapPos[mapIdx] < cMPosNextCO)
+	  left = mid;
+	else if ((*curMap)[mid].mapPos[mapIdx] > cMPosNextCO)
+	  right = mid;
+	else {
+	  // equal: exact map position
+	  switchIdx = mid;
+	  break;
+	}
+      }
+      if (switchIdx == mapNumPos - 1)
+	break; // let code below this while loop insert the final segments
+
+      // get physical position using linear interpolation:
+      double frac = (cMPosNextCO - (*curMap)[switchIdx].mapPos[mapIdx]) /
 	      ((*curMap)[switchIdx+1].mapPos[mapIdx] -
 					   (*curMap)[switchIdx].mapPos[mapIdx]);
-    assert(frac >= 0.0 && frac <= 1.0);
-    int switchPos = (*curMap)[switchIdx].physPos +
+      assert(frac >= 0.0 && frac <= 1.0);
+      int switchPos = (*curMap)[switchIdx].physPos +
 	frac * ((*curMap)[switchIdx+1].physPos - (*curMap)[switchIdx].physPos);
 
-    // copy Segments from <curHap>
-    for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
-							  curSegIdx[curHap]++) {
-      Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
-      if (seg.endPos >= switchPos) {
-	// last segment to copy, and we will break it at <switchPos>
-	toGenerate.emplace_back(seg.foundHapNum, switchPos);
-	if (seg.endPos == switchPos)
-	  curSegIdx[curHap]++;
-
-	if (ped >= 0) {
-	  hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	      ped, fam, curGen, branch, ind, nextSegStart, switchPos);
-	  nextSegStart = switchPos + 1;
-	}
-	break; // done copying
-      }
-      else {
-	toGenerate.push_back(seg);
-
-	if (ped >= 0) {
-	  hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	      ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
-	  nextSegStart = seg.endPos + 1;
-	}
-      }
+      // copy Segments from <curHap>
+      copySegs(toGenerate, parent, nextSegStart, switchPos, curSegIdx, curHap,
+	       chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
     }
-    assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
-
-    // swap haplotypes
-    curHap ^= 1;
-    // must update <curSegIdx[curHap]>
-    for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
-							  curSegIdx[curHap]++) {
-      Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
-      if (seg.endPos > switchPos)
-	// current segment spans from just after <switchMarker> to <endMarker>
-	break;
-    }
-    assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
   }
+  else {
+    vector<int> &theCOs = FixedCOs::getCOs(parent.sex, fixedCOidxs[parent.sex],
+					   chrIdx);
+
+    for(auto it = theCOs.begin(); it != theCOs.end(); it++) {
+      // copy Segments from <curHap>
+      copySegs(toGenerate, parent, nextSegStart, /*switchPos=*/ *it, curSegIdx,
+	       curHap, chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
+    }
+  }
+  
 
   // copy through to the end of the chromosome:
   for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
@@ -1873,6 +1998,54 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
       nextSegStart = seg.endPos + 1;
     }
   }
+}
+
+// Copies the <Segment>s between <nextSegStart> and <switchPos> from <parent>'s
+// <curHap> haplotype to <toGenerate>.
+void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
+	      int switchPos, unsigned int curSegIdx[2], int &curHap,
+	      unsigned int chrIdx,
+	      vector< vector< vector<InheritRecord> > > &hapCarriers,
+	      int ped, int fam, int curGen, int branch, int ind) {
+  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
+							  curSegIdx[curHap]++) {
+    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
+    if (seg.endPos >= switchPos) {
+      // last segment to copy, and we will break it at <switchPos>
+      toGenerate.emplace_back(seg.foundHapNum, switchPos);
+      if (seg.endPos == switchPos)
+	curSegIdx[curHap]++;
+
+      if (ped >= 0) {
+	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
+	    ped, fam, curGen, branch, ind, nextSegStart, switchPos);
+	nextSegStart = switchPos + 1;
+      }
+      break; // done copying
+    }
+    else {
+      toGenerate.push_back(seg);
+
+      if (ped >= 0) {
+	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
+	    ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
+	nextSegStart = seg.endPos + 1;
+      }
+    }
+  }
+  assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
+
+  // swap haplotypes
+  curHap ^= 1;
+  // must update <curSegIdx[curHap]>
+  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
+							  curSegIdx[curHap]++) {
+    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
+    if (seg.endPos > switchPos)
+      // current segment spans from just after <switchMarker> to <endMarker>
+      break;
+  }
+  assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
 }
 
 // Returns the number of spouses a given generation <gen> and <branch> has
@@ -2058,7 +2231,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	}
 
 	// Iterate over InheritRecords that came before <curRec> to search for
-	// overlap (which implies and IBD segment
+	// overlap (which implies an IBD segment)
 	auto overIt = overlapRecs.begin();
 	while (overIt != overlapRecs.end()) {
 	  if (curRec.startPos < overIt->endPos) {
@@ -2425,7 +2598,7 @@ template<typename IO_TYPE>
 void FileOrGZ<IO_TYPE>::alloc_buf() {
   buf = (char *) malloc(INIT_SIZE);
   if (buf == NULL) {
-    printf("ERROR: out of memory\n");
+    fprintf(stderr, "ERROR: out of memory\n");
     exit(1);
   }
   buf_size = INIT_SIZE;

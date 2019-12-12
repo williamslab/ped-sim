@@ -27,6 +27,7 @@ double CmdLineOpts::pseudoHapRate = 0.0;
 int    CmdLineOpts::keepPhase = 0;
 int    CmdLineOpts::retainExtra = 0;
 int    CmdLineOpts::printFounderIds = 0;
+char  *CmdLineOpts::fixedCOfile = NULL;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
@@ -38,6 +39,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     ERR_HOM_RATE,
     MISS_RATE,
     PSEUDO_HAP_RATE,
+    FIXED_CO,
   };
 
   // This is a local variable because whenever <interfereFile> is NULL, the
@@ -58,6 +60,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
     {"miss_rate", required_argument, NULL, MISS_RATE},
     {"pseudo_hap", required_argument, NULL, PSEUDO_HAP_RATE},
+    {"fixed_co", required_argument, NULL, FIXED_CO},
     {0, 0, 0, 0}
   };
 
@@ -185,6 +188,15 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	  exit(2);
 	}
 	break;
+      case FIXED_CO:
+	if (fixedCOfile != NULL) {
+	  if (haveGoodArgs)
+	    fprintf(stderr, "\n");
+	  fprintf(stderr, "ERROR: multiple definitions of fixed CO file\n");
+	  haveGoodArgs = false;
+	}
+	fixedCOfile = optarg;
+	break;
 
       case '?':
 	// bad option; getopt_long already printed error message
@@ -260,6 +272,8 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --bp \t\t\tprint BP file (complete haplotype transmission info)\n");
   fprintf(out, "\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --fixed_co <filename>\tfixed crossovers to use for simulating\n");
   fprintf(out, "\n");
   fprintf(out, "  USED WITH -i:\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
