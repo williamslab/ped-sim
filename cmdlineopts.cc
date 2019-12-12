@@ -218,16 +218,17 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     fprintf(stderr, "ERROR: def, map, and output prefix names required\n");
     haveGoodArgs = false;
   }
-  if (!poisson && !interfereFile) {
+  if (!poisson && !interfereFile && !fixedCOfile) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
-    fprintf(stderr, "ERROR: must specify crossover model, --pois or --intf\n");
+    fprintf(stderr, "ERROR: must specify crossover model, --pois or --intf, or use --fixedCOfile\n");
     haveGoodArgs = false;
   }
-  else if (poisson && interfereFile) {
+  else if ((poisson && interfereFile) || (poisson && fixedCOfile) ||
+	   (interfereFile && fixedCOfile)) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
-    fprintf(stderr, "ERROR: can only use one crossover model, --pois or --intf\n");
+    fprintf(stderr, "ERROR: can only use one crossover model, --pois or --intf, or --fixedCOfile\n");
     haveGoodArgs = false;
   }
 
@@ -263,6 +264,8 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --intf <filename>\tshape, escape values for interference model RECOMMENDED\n");
   fprintf(out, " OR:\n");
   fprintf(out, "  --pois\t\tPoisson crossover model (no interference)\n");
+  fprintf(out, " OR:\n");
+  fprintf(out, "  --fixed_co <filename>\tfixed crossovers to use for simulating\n");
   fprintf(out, "\n\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
@@ -273,9 +276,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
   fprintf(out, "\n");
-  fprintf(out, "  --fixed_co <filename>\tfixed crossovers to use for simulating\n");
-  fprintf(out, "\n");
-  fprintf(out, "  USED WITH -i:\n");
+  fprintf(out, " USED WITH -i:\n");
   fprintf(out, "  --err_rate <#>\tgenotyping error rate (default 1e-3; 0 disables)\n");
   fprintf(out, "  --err_hom_rate <#>\trate of opposite homozygote errors conditional on a\n");
   fprintf(out, "\t\t\t  genotyping error at the marker (default 0)\n");

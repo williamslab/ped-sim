@@ -319,9 +319,12 @@ int main(int argc, char **argv) {
 
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);
 
-    fprintf(outs[o], "  Interference file:\t%s\n\n",
-	    CmdLineOpts::interfereFile == NULL ? "[none: Poisson model]" :
+    if (!CmdLineOpts::fixedCOfile)
+      fprintf(outs[o], "  Interference file:\t%s\n\n",
+	      CmdLineOpts::interfereFile == NULL ? "[none: Poisson model]" :
 						    CmdLineOpts::interfereFile);
+    else
+      fprintf(outs[o], "  Interference file:\t[none: Fixed COs]\n\n");
 
     if (CmdLineOpts::inVCFfile) {
       // options only relevant when generating data (so when we have input data)
