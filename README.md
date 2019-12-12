@@ -24,7 +24,7 @@ Table of Contents
       * [Citing Ped-sim](#citing-ped-sim-and-related-papers)
       * [Other optional arguments](#other-optional-arguments)
          * [Specifying random seed](#specifying-random-seed---seed-)
-         * [Using specified crossovers](#sing-specified-set-of-crossovers---fixed_co-filename)
+         * [Using specified crossovers](#using-specified-set-of-crossovers---fixed_co-filename)
          * [Genotyping error rate](#genotyping-error-rate---err_rate-)
          * [Rate of opposite homozygote errors](#rate-of-opposite-homozygote-errors---err_hom_rate-)
          * [Missingness rate](#missingness-rate---miss_rate-)
