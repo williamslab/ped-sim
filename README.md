@@ -8,7 +8,7 @@ Table of Contents
 -----------------
    * Pedigree Simulator
       * [Basic usage](#basic-usage)
-	 * [Quick start](#quick-start)
+         * [Quick start](#quick-start)
       * [Compiling](#compiling)
       * [Def file (with examples)](#def-file)
       * [Map file](#map-file)
