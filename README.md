@@ -8,7 +8,7 @@ Table of Contents
 -----------------
    * Pedigree Simulator
       * [Basic usage](#basic-usage)
-	* [Quick start](#quick-start)
+	 * [Quick start](#quick-start)
       * [Compiling](#compiling)
       * [Def file (with examples)](#def-file)
       * [Map file](#map-file)
@@ -443,7 +443,7 @@ Ped-sim generates a list of all simulated IBD segments among relative pairs
 whenever both samples have been requested to be printed. This file has nine
 fields:
 
-    [sample 1] [sample 2] [chromosome] [physical position start] [physical position end] [IBD type] [genetic position start] [genetic position end]
+    [sample 1] [sample 2] [chromosome] [physical position start] [physical position end] [IBD type] [genetic position start] [genetic position end] [genetic length (end - start)]
 
 The IBD type is one of `IBD1`, `IBD2` or `HBD`. `IBD1` indicates the pair shares
 one IBD segment (on one of their two haplotypes) in the interval, and `IBD2`
