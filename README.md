@@ -566,7 +566,7 @@ in the same run.
 Citing Ped-sim and related papers
 ---------------------------------
 
-If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://www.biorxiv.org/content/early/2019/01/22/527655);
+If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007979);
 if you use the Refined genetic map (named `refined_mf.simmap` in the example
 code), please cite [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
 and if you use the `interfere/nu_p_campbell.tsv` interference parameters, please
