@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <assert.h>
 #include <zlib.h>
+#include <limits.h>
 #include "cmdlineopts.h"
 #include "cointerfere.h"
 
