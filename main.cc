@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
+#include <limits.h>
 #include <vector>
 #include <set>
 #include <random>
