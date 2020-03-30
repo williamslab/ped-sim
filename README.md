@@ -77,8 +77,8 @@ map in Ped-sim format are [below](#map-file).
 This uses the [below](#map-file) genetic map, and [human crossover interference
 parameters](https://www.nature.com/articles/ncomms7260) stored in `interfere/`.
 The `output.seg` file is the primary result of this run and lists the IBD
-segments the samples share. It does not include any input genetic data and so
-does not produce any output genetic data.
+segments the samples share. This example does not include any input genetic
+data and so does not produce any output genetic data.
 
 ------------------------------------------------------
 
@@ -101,7 +101,7 @@ Def file
 
 The def file defines the pedigree structure(s) to be simulated. Comments are
 allowed on a line by themselves beginning with #. Example def files are in the
-`example/` directory, and descriptions of the three example files are below.
+`example/` directory, and descriptions of the example files are below.
 
 The first line of a pedigree definition contains four (or five) columns:
 
@@ -127,7 +127,7 @@ the individual with id `i1` (the reproducing individual) in each branch. See
 After this first line, the def file lists simulation details corresponding to
 various generations in the pedigree. Each such line has the following format:
 
-    [generation#] [#samples_to_print] <#branches> <branch_parents>
+    [generation#] [#samples_to_print] <#branches> <branch_specifications>
 
 `[generation#]` gives an integer value for the pedigree generation number. This
 value can range from 1 (the earliest generation) to the total number of
@@ -150,7 +150,9 @@ to generate for each branch. Also note that if a branch contains a founder
 individual (such as in generation 1), it will only ever contain one individual
 (and any spouses of that person): the `[#samples_to_print]` value will only
 control whether (if it is greater than 0) or not (if it is 0) Ped-sim prints
-that founder and his/her spouses.
+that founder and his/her spouses. **Note: it is possible to print the members
+of specific branches (instead of all individuals) in a given generation. See
+the "no-print" branch specification described below.**
 
 `<#branches>` is an optional field. By default:
 
@@ -162,8 +164,9 @@ branches as the previous generation. In consequence, not all generations need
 an explicit listing in the def file.
 
 For generation 1, multiple branches are allowed, and all such branches contain
-only founder individuals. For all other generations, if the `branch_parents`
-field (described below) is empty, the parents of each branch are as follows:
+only founder individuals. For all other generations, if the
+`branch_specifications` field (described below) is empty, the parents of each
+branch are as follows:
 
 * If the number of branches is *an integer multiple* n *times the number of
 branches in the previous generation*, individuals in branch *i* in the previous
@@ -183,23 +186,34 @@ number in the previous generation and *n* is the largest integer divisor by
 *n\*p+1* through *n\*p+r* contain founder individuals (as in generation 1),
   where *r* is the remainder branch number after integer division.
 
-The above are defaults, and the parents of a branch can be specified using the
-branch parent entry.
+The above are defaults, and the parents of a branch can be assigned in the
+branch specifications.
 
-`<branch_parents>` is optional. The default parent assignments are given
-above. Any of the following formats provide parent specifications:
+`<branch_specifications>` is an optional set of one or more fields containing
+(a) no-print branches and/or (b) non-default parent assignments for a set of
+branches. The default parent assignments are given above, and by default, all
+branches have the same number of individuals printed (given in the
+`[#samples_to_print]` field).
+
+**No-print branches** have the format:
+
+    [current_branches]n
+
+**Parent assignments** have any of the following formats:
 
     [current_branches]:
     [current_branches]:[parent_branch1]
     [current_branches]:[parent_branch1]_[parent_branch2]
     [current_branches]:[parent_branch1]_[parent_branch2]^[parent_branch2_generation]
 
-Here `[current_branches]` contains a range of branches from the current
-generation whose parents are specified after the `:` character. This can be
-a single branch or comma separated list of branches such as `1,2,3` or, for a
-contiguous range you can use a hyphen as in `1-3`. Any combination of
-contiguous ranges and comma separated sets of branches are allowed such as
-`2-5,7,9-10`.
+In both cases, `[current_branches]` contains a range of branches from the
+current generation who should either not be printed or whose parents are
+assigned after the `:` character. This can be a single branch or comma
+separated list of branches such as `1,2,3` or, for a contiguous range, you can
+use a hyphen as in `1-3`. Any combination of contiguous ranges and comma
+separated sets of branches are allowed such as `2-5,7,9-10`.
+
+For parent assignments:
 
 If no text appears after the ':', the indicated branches will contain founder
 individuals. For example, `1-3,5:` specifies that branches 1 through 3 and 5
@@ -210,7 +224,7 @@ branch in the previous generation has children with a founder spouse. So for
 example, `1,7:2` indicates that branches 1 and 7 will be the children of an
 individual from branch 2 in the previous generation and a founder spouse.
 Because these branches are listed together, they will contain full siblings.
-To generate these branches as half-sibling children of branch 2 the
+To generate these branches as half-sibling children of branch 2, the
 specification should be `1:2 7:2`. Here, branch 2 contains the parent of both
 individuals, but the separate specifications for branches 1 and 7 ensures that
 that parent has children with two different founder spouses, making the
@@ -258,16 +272,17 @@ previous generation and that previous generation (2) has only one branch.
 The second entry simulates 10 pedigrees named `avuncular`:
 
     def avuncular 10 3
-    2 2 1
-    3 1
+    2 1 2  1n
+    3 1 1
 
 Here, generation 1 has the default of one branch with no data printed.
-Generation 2 also has one branch and there are two full siblings in that branch.
-Both of these individuals get printed along with the spouse of the reproducing
-individual in that branch. Finally, generation 3 has one branch (since
-generation 2 has that number) and one individual gets printed. Thus, for each
-replicate pedigree, there is a pair of samples with an avuncular relationship
-included in the output, along with two parent-offspring sample pairs.
+Generation 2 has two branches that are the full sibling children of the
+founders in generation 1. The sibling in branch 2 gets printed, but because of
+the no-print `1n` branch specification, neither member of branch 1 (i.e.,
+branch 2's full sibling and his/her spouse) get printed. Finally, generation 3
+has one branch with one individual that gets printed. Thus, for each replicate
+pedigree, the program produces a pair of samples with an avuncular
+relationship.
 
 The third entry simulates 10 pedigrees named `hs` for half-sibling:
 
@@ -275,10 +290,11 @@ The third entry simulates 10 pedigrees named `hs` for half-sibling:
     2 1 2 1:1 2:1
 
 Here, generation 1 has the default of one branch with no data printed.
-Generation 2 has two branches. With the parent specification of `1:1 2:1`,
+Generation 2 has two branches, and with the parent specification of `1:1 2:1`,
 both these branches have the reproducing individual from branch 1 as a parent.
 They are both also children of two distinct founders and are therefore
-half-siblings. This prints two individuals per pedigree, one from each branch.
+half-siblings. This prints two individuals per pedigree, one from each of the
+branches in generation 2.
 
 The last entry simulates 10 pedigrees named `dc` for double cousins:
 
@@ -335,12 +351,16 @@ different founder spouses and are thus half-siblings. In consequence, the
 ultimate descendants in generation 4 are a mix of (full) first cousins and
 half-second cousins.
 
-### Example def file: `example/cousins-1st_half_to_3rd.def`
+### Other example def files
 
 The `example/cousins-1st_half_to_3rd.def` def file includes five types of
 pedigrees producing first cousins, half-first cousins, second cousins,
 half-second cousins, and third cousins. The comments in the file include some
 documentation of these pedigree specifications.
+
+The `example/once-removed.def` def file includes three pedigrees that make use
+of the `no-print` branch specification in order to print relative pairs from
+different generations (including first cousins once removed).
 
 ------------------------------------------------------
 
@@ -449,7 +469,7 @@ fields:
 The IBD type is one of `IBD1`, `IBD2` or `HBD`. `IBD1` indicates the pair shares
 one IBD segment (on one of their two haplotypes) in the interval, and `IBD2`
 indicates the pair shares two segments IBD in the region. `HBD` stands for
-homomozygous by descent, also called a run of homozygosity (ROH), which is a
+homozygous by descent, also called a run of homozygosity (ROH), which is a
 region where an individual is IBD with themselves. The latter only occurs in
 the presence of inbreeding.
 
