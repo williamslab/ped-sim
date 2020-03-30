@@ -42,11 +42,11 @@ struct ParentComp {
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
-  SimDetails(int nFam, int nGen, int *retain, int *branches, Parent **parents,
+  SimDetails(int nFam, int nGen, int **print, int *branches, Parent **parents,
 	     int **sexes, int i1FixedSex, int **spouses, char *theName) {
     numFam = nFam;
     numGen = nGen;
-    numSampsToRetain = retain;
+    numSampsToPrint = print;
     numBranches = branches;
     branchParents = parents;
     sexConstraints = sexes;
@@ -61,7 +61,7 @@ struct SimDetails {
   }
   int numFam;
   int numGen;
-  int *numSampsToRetain;
+  int **numSampsToPrint;
   int *numBranches;
   Parent **branchParents;
   int **sexConstraints;
@@ -188,13 +188,19 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 				Parent *&thisGenBranchParents, int prevGen,
 				int *prevGenSpouseNum = NULL,
 				vector<bool> *branchParentsAssigned = NULL);
-void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
-		       int curGen, int **sexConstraints,
-		       int *&prevGenSpouseNum,
-		       vector<bool> &branchParentsAssigned,
-		       vector< set<Parent,ParentComp>* > &spouseDependencies,
-		       const int i1Sex, const char *delim, char *&saveptr,
-		       char *&endptr, int line);
+bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
+		    int *thisGenNumSampsToPrint, int curGen,
+		    int **sexConstraints, int *&prevGenSpouseNum,
+		    vector<bool> &branchParentsAssigned,
+		    vector< set<Parent,ParentComp>* > &spouseDependencies,
+		    const int i1Sex, const char *delim, char *&saveptr,
+		    char *&endptr, int line);
+void readParents(int *numBranches, int prevGen, int **sexConstraints,
+		 int *&prevGenSpouseNum,
+		 vector< set<Parent,ParentComp>* > &spouseDependencies,
+		 char *assignBranches, char *assignPar[2], Parent pars[2],
+		 char *&fullAssignPar, const int i1Sex, char *&endptr,
+		 int line);
 void updateSexConstraints(int **sexConstraints, Parent pars[2],
 			  int *numBranches,
 			  vector< set<Parent,ParentComp>*> &spouseDependencies,
@@ -209,7 +215,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	     bool sexSpecificMaps, vector<COInterfere> &coIntf,
 	     vector< vector< vector<InheritRecord> > > &hapCarriers);
-void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
+void getPersonCounts(int curGen, int numGen, int branch, int **numSampsToPrint,
 		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
 void generateHaplotype(Haplotype &toGenerate, Person &parent,
@@ -457,6 +463,9 @@ int main(int argc, char **argv) {
 
   fclose(log);
 
+  // NOTE: the memory isn't freed because the OS reclaims it when Ped-sim
+  // finishes
+
   return 0;
 }
 
@@ -472,10 +481,10 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     exit(1);
   }
 
-  // def file contains information about how many samples to generate / store
-  // information for in some of the generations; we store this in an array
-  // with length equal to the number of generations to be simulated
-  int *curNumSampsToRetain = NULL;
+  // def file gives the number of samples to print; we store this in a 2d array
+  // with the first index being generation number and the second index the
+  // branch number
+  int **curNumSampsToPrint = NULL;
   // Have variable number of branches in each generation
   int *curNumBranches = NULL;
   // Who are the parents of each branch in each generation?
@@ -507,6 +516,8 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   // Stores sets of individuals that are required to have the same and/or
   // opposite sex assignments by virtue of their being spouses.
   vector< set<Parent,ParentComp>* > spouseDependencies;
+
+  bool warningGiven = false;
 
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
@@ -590,12 +601,12 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	}
       }
 
-      curNumSampsToRetain = new int[curNumGen];
+      curNumSampsToPrint = new int*[curNumGen];
       curNumBranches = new int[curNumGen];
       curBranchParents = new Parent*[curNumGen];
       curSexConstraints = new int*[curNumGen];
       curBranchNumSpouses = new int*[curNumGen];
-      if (curNumSampsToRetain == NULL || curNumBranches == NULL ||
+      if (curNumSampsToPrint == NULL || curNumBranches == NULL ||
 	  curBranchParents == NULL || curSexConstraints == NULL ||
 	  curBranchNumSpouses == NULL) {
 	printf("ERROR: out of memory");
@@ -606,7 +617,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 
       for(int gen = 0; gen < curNumGen; gen++) {
 	// initially
-	curNumSampsToRetain[gen] = 0;
+	curNumSampsToPrint[gen] = NULL;
 	// set to -1 initially so we know these are unassigned; will update
 	// later
 	curNumBranches[gen] = -1;
@@ -614,7 +625,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	curSexConstraints[gen] = NULL;
 	curBranchNumSpouses[gen] = NULL;
       }
-      simDetails.emplace_back(curNumFam, curNumGen, curNumSampsToRetain,
+      simDetails.emplace_back(curNumFam, curNumGen, curNumSampsToPrint,
 			      curNumBranches, curBranchParents,
 			      curSexConstraints, curI1Sex,
 			      curBranchNumSpouses, name);
@@ -625,7 +636,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     // parse line with information about a generation in the current pedigree
 
     // is there a current pedigree?
-    if (curNumSampsToRetain == NULL) {
+    if (curNumSampsToPrint == NULL) {
       fprintf(stderr, "ERROR: line %d in def: expect four or five fields for pedigree definition:\n",
 	      line);
       fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
@@ -691,7 +702,8 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	      line, generation);
       exit(2);
     }
-    curNumSampsToRetain[generation - 1] = numSamps;
+    // Will assign <numSamps> to each branch of this generation below -- first
+    // need to know how many branches are in this generation
 
     // Assign number of branches (and parents) for generations that are not
     // explicitly listed. In general the number of branches is equal to the
@@ -711,6 +723,10 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       if (i > 0)
 	assignDefaultBranchParents(curNumBranches[i-1], curNumBranches[i],
 				   curBranchParents[i], /*prevGen=*/i-1);
+      // assign default of 0 samples to print
+      curNumSampsToPrint[i] = new int[ curNumBranches[i] ];
+      for (int b = 0; b < curNumBranches[i]; b++)
+	curNumSampsToPrint[i][b] = 0;
     }
 
     int thisGenNumBranches;
@@ -745,17 +761,25 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       curNumBranches[generation - 1] = thisGenNumBranches;
     }
 
+    curNumSampsToPrint[generation - 1] = new int[thisGenNumBranches];
+    for(int b = 0; b < thisGenNumBranches; b++)
+      curNumSampsToPrint[generation - 1][b] = numSamps;
+
     lastReadGen = generation - 1;
 
     // now read in and assign (if only using the defaults) the branch parents
     // for this generation. Note that in the first generation, all individuals
     // are necessarily founders so there should not be any specification.
-    if (generation - 1 > 0)
-      readBranchParents(curNumBranches, curBranchParents[generation - 1],
+    if (generation - 1 > 0) {
+      bool warning = readBranchSpec(curNumBranches,
+			curBranchParents[generation - 1],
+			curNumSampsToPrint[generation - 1],
 			/*curGen=*/generation - 1, curSexConstraints,
 			/*prevSpouseNum=*/curBranchNumSpouses[generation - 2],
 			branchParentsAssigned, spouseDependencies, curI1Sex,
-			delim,saveptr, endptr, line);
+			delim, saveptr, endptr, line);
+      warningGiven = warningGiven || warning;
+    }
     else if (strtok_r(NULL, delim, &saveptr) != NULL) {
       fprintf(stderr, "ERROR: line %d in def: first generation cannot have parent specifications\n",
 	      line);
@@ -765,14 +789,29 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 
 
   for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
-    if (it->numSampsToRetain[ it->numGen - 1 ] == 0) {
+    bool someBranchToPrint = false;
+    bool anyNoPrint = false;
+    int lastGenNumBranches = it->numBranches[ it->numGen - 1 ];
+    for(int b = 0; b < lastGenNumBranches; b++) {
+      if (it->numSampsToPrint[ it->numGen - 1 ][b] == 0)
+	anyNoPrint = true;
+      else
+	someBranchToPrint = true;
+    }
+
+    if (!someBranchToPrint) {
       fprintf(stderr, "ERROR: request to simulate pedigree \"%s\" with %d generations\n",
 	      it->name, it->numGen);
       fprintf(stderr, "       but no request to print any samples from last generation (number %d)\n",
 	      it->numGen);
       exit(4);
     }
-  }
+    else if (anyNoPrint) {
+      fprintf(stderr, "Warning: no-print branches in last generation of pedigree %s:\n",
+	      it->name);
+      fprintf(stderr, "         can omit these branches and possibly reduce number of founders needed\n");
+    }
+}
 
   if (simDetails.size() == 0) {
     fprintf(stderr, "ERROR: def file does not contain pedigree definitions;\n");
@@ -787,6 +826,9 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     if (spouseDependencies[i] != NULL)
       delete spouseDependencies[i];
 
+
+  if (warningGiven)
+    fprintf(stderr, "\n");
 }
 
 
@@ -1138,20 +1180,23 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
   }
 }
 
-// Reads in branch parent specification and makes the parent assignments
-void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
-		       int curGen, int **sexConstraints,
-		       int *&prevGenSpouseNum,
-		       vector<bool> &branchParentsAssigned,
-		       vector< set<Parent,ParentComp>* > &spouseDependencies,
-		       const int i1Sex, const char *delim, char *&saveptr,
-		       char *&endptr, int line) {
+// Reads in and performs state changes for branch specifications including
+// both parent assignments and no-print directives
+// Returns true iff a warning has been printed
+bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
+		    int *thisGenNumSampsToPrint, int curGen,
+		    int **sexConstraints, int *&prevGenSpouseNum,
+		    vector<bool> &branchParentsAssigned,
+		    vector< set<Parent,ParentComp>* > &spouseDependencies,
+		    const int i1Sex, const char *delim, char *&saveptr,
+		    char *&endptr, int line) {
+  bool warningGiven = false;
   int prevGen = curGen - 1;
 
   assert(prevGenSpouseNum == NULL);
   prevGenSpouseNum = new int[numBranches[prevGen]];
   if (prevGenSpouseNum == NULL) {
-    printf("ERROR: out of memory");
+    printf("ERROR: out of memory\n");
     exit(5);
   }
   for(int b = 0; b < numBranches[prevGen]; b++)
@@ -1164,13 +1209,13 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 
   thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
   if (thisGenBranchParents == NULL) {
-    printf("ERROR: out of memory");
+    printf("ERROR: out of memory\n");
     exit(5);
   }
 
   sexConstraints[prevGen] = new int[numBranches[prevGen]];
   if (sexConstraints[prevGen] == NULL) {
-    printf("ERROR: out of memory");
+    printf("ERROR: out of memory\n");
     exit(5);
   }
   for(int i = 0; i < numBranches[prevGen]; i++)
@@ -1185,137 +1230,58 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 
   while (char *assignToken = strtok_r(NULL, delim, &saveptr)) {
     char *assignBranches = assignToken; // will add '\0' at ':'
+    char *fullAssignPar = NULL;
     int i;
+    Parent pars[2];
 
     // split on ':' to get the parent assignments on the right and the
     // branches on the left
-    for(i = 0; assignToken[i] != ':' && assignToken[i] != '\0'; i++);
-    if (assignToken[i] != ':') {
-      fprintf(stderr, "ERROR: line %d in def: improperly formatted parent assignment field %s\n",
-	  line, assignToken);
+    for(i = 0; assignToken[i] != ':' && assignToken[i] != 'n' &&
+	       assignToken[i] != '\0'; i++);
+    // ':' gives parents (after the ':') and n means the preceeding branches
+    // should not have their members printed
+    bool parentAssign = false;
+    bool noPrint = false;
+    if (assignToken[i] == ':')
+      parentAssign = true;
+    else if (assignToken[i] == 'n')
+      noPrint = true;
+    else {
+      fprintf(stderr, "ERROR: line %d in def: improperly formatted parent assignment or no-print\n",
+	      line);
+      fprintf(stderr, "       field %s\n", assignToken);
       exit(8);
     }
     assignToken[i] = '\0';
 
-    // Get the one or two parents
-    char *assignPar[2];
-    assignPar[0] = &(assignToken[i+1]); // will add '\0' at '_' if present
-    assignPar[1] = NULL; // initially; updated just below
-
-    // Find the second parent if present
-    for(i = 0; assignPar[0][i] != '_' && assignPar[0][i] != '\0'; i++);
-    if (assignPar[0][i] == '_') {
-      assignPar[0][i] = '\0';
-      assignPar[1] = &(assignPar[0][i+1]);
-    }
-
-    Parent pars[2];
-    for(int p = 0; p < 2; p++) {
-      pars[p].branch = -1;
-      pars[p].gen = prevGen;
-    }
-    for(int p = 0; p < 2 && assignPar[p] != NULL && assignPar[p][0] != '\0';
-									  p++) {
-      // Check for generation number
-      char *genNumStr = NULL;
-      for(i = 0; assignPar[p][i] != '^' && assignPar[p][i] != '\0'; i++);
-      if (assignPar[p][i] == '^') {
-	// Have a generation number
-	if (p == 0) {
-	  fprintf(stderr, "ERROR: line %d in def: parent assignment for branches %s gives generation\n",
-		  line, assignBranches);
-	  fprintf(stderr, "       number for the first parent, but this is only allowed for the second\n");
-	  fprintf(stderr, "       parent; for example, 2:1_3^1 has branch 1 from previous generation\n");
-	  fprintf(stderr, "       married to branch 3 from generation 1\n");
-	  exit(3);
-	}
-	assignPar[p][i] = '\0';
-	genNumStr = &(assignPar[p][i+1]);
-	pars[p].gen = strtol(genNumStr, &endptr, 10) - 1; // 0 indexed => -1
-	if (errno != 0 || *endptr != '\0') {
-	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
-		  line, assignBranches);
-	  fprintf(stderr, "       malformed generation number string for second parent: %s\n",
-		  genNumStr);
-	  if (errno != 0)
-	    perror("strtol");
-	  exit(5);
-	}
-	if (pars[p].gen > prevGen) {
-	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
-		  line, assignBranches);
-	  fprintf(stderr, "       generation number %s for second parent is after previous generation\n",
-		  genNumStr);
-	  exit(-7);
-	}
-	else if (pars[p].gen < 0) {
-	  fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
-		  line, assignBranches);
-	  fprintf(stderr, "       generation number %s for second parent is before first generation\n",
-		  genNumStr);
-	  exit(5);
-	}
-      }
-
-      pars[p].branch = strtol(assignPar[p], &endptr, 10) - 1; // 0 indexed => -1
-      if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
-		line, assignBranches);
-	if (errno != 0)
-	  perror("strtol");
-	exit(2);
-      }
-      if (pars[p].branch < 0) {
-	fprintf(stderr, "ERROR: line %d in def: parent assignments must be of positive branch numbers\n",
-	    line);
+    if (noPrint) {
+      // expect a space after the 'n': check this
+      if (assignToken[i+1] != '\0') {
+	assignToken[i] = 'n';
+	fprintf(stderr, "ERROR: line %d in def: improperly formatted no-print field \"%s\":\n",
+		line, assignToken);
+	fprintf(stderr, "       no-print character 'n' should be followed by white space\n");
 	exit(8);
       }
-      else if (pars[p].branch >= numBranches[ pars[p].gen ]) {
-	fprintf(stderr, "ERROR: line %d in def: parent branch number %d is more than the number of\n",
-		line, pars[p].branch+1);
-	fprintf(stderr, "       branches (%d) in generation %d\n",
-		numBranches[ pars[p].gen ], pars[p].gen+1);
-	exit(8);
-      }
-      // so that we can print the parent assignment in case of errors below
-      if (genNumStr != NULL)
-	genNumStr[-1] = '^';
     }
-    if (pars[0].branch == -1) {
-      // new founder
-      assert(pars[1].branch == -1);
-    }
-    else if (pars[1].branch == -1) {
-      // Have not yet assigned the numerical id of parent 1. Because the def
-      // file doesn't specify this, it is a founder, and one that hasn't been
-      // assigned before. As such, we'll get a unique number associated with a
-      // spouse of pars[0].branch. Negative values correspond to founders, so
-      // we decrement <prevGenSpouseNum>. (It is initialized to 0 above)
-      prevGenSpouseNum[ pars[0].branch ]--;
-      pars[1].branch = prevGenSpouseNum[ pars[0].branch ];
-    }
-    else {
-      if (pars[0].branch == pars[1].branch && pars[0].gen == pars[1].gen) {
-	fprintf(stderr, "ERROR: line %d in def: cannot have both parents be from same branch\n",
-		line);
-	exit(8);
-      }
-      if (i1Sex >= 0) {
-	fprintf(stderr, "ERROR: line %d in def: cannot have fixed sex for i1 samples and marriages\n",
-		line);
-	fprintf(stderr, "       between branches -- i1's will have the same sex and cannot reproduce\n");
-	exit(9);
-      }
-      updateSexConstraints(sexConstraints, pars, numBranches,
-			   spouseDependencies, line);
+    if (parentAssign) {
+      // Get the one or two parents
+      char *assignPar[2];
+      assignPar[0] = &(assignToken[i+1]); // will add '\0' at '_' if present
+      assignPar[1] = NULL; // initially; updated just below
+
+      readParents(numBranches, prevGen, sexConstraints, prevGenSpouseNum,
+		  spouseDependencies, assignBranches, assignPar, pars,
+		  fullAssignPar, i1Sex, endptr, line);
     }
 
-    // so that we can print the parent assignment in case of errors below
-    if (assignPar[1] != NULL)
-      assignPar[1][-1] = '_';
-    char *fullAssignPar = assignPar[0];
 
-    // process the branches to be assigned <pars> as parent branches
+    // one should be true, not both:
+    assert((parentAssign || noPrint) && !(parentAssign && noPrint));
+
+    // process the branches
+    // if <parentAssign>, these will be assigned <pars> as parent OR
+    // if <noPrint>, these will not be printed
     bool done = false;
     // the starting branch for a range (delimited by '-'); see below
     char *startBranch = NULL;
@@ -1343,8 +1309,12 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 
 	int curBranch = strtol(assignBranches, &endptr, 10) - 1; // 0 indexed
 	if (errno != 0 || *endptr != '\0') {
-	  fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to assign parent %s to\n",
-		  line, assignBranches, fullAssignPar);
+	  fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to ",
+		  line, assignBranches);
+	  if (parentAssign)
+	    fprintf(stderr, "assign parent %s to\n", fullAssignPar);
+	  else // no print
+	    fprintf(stderr, "set as no-print\n");
 	  if (errno != 0)
 	    perror("strtol");
 	  exit(2);
@@ -1354,8 +1324,12 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 	  int rangeEnd = curBranch;
 	  int rangeStart = strtol(startBranch, &endptr, 10) - 1; // 0 indexed
 	  if (errno != 0 || *endptr != '\0') {
-	    fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to assign parent %s to\n",
-		    line, startBranch, fullAssignPar);
+	    fprintf(stderr, "ERROR: line %d in def: unable to parse branch %s to ",
+		    line, startBranch);
+	    if (parentAssign)
+	      fprintf(stderr, "assign parent %s to\n", fullAssignPar);
+	    else // no print
+	      fprintf(stderr, "set as no-print\n");
 	    if (errno != 0)
 	      perror("strtol");
 	    exit(2);
@@ -1363,40 +1337,80 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
 	  startBranch = NULL; // parsed: reset this variable
 
 	  if (rangeStart >= rangeEnd) {
-	    fprintf(stderr, "ERROR: line %d in def: assigning parents to non-increasing branch range %d-%d\n",
+	    fprintf(stderr, "ERROR: line %d in def: non-increasing branch range %d-%d to\n",
 		    line, rangeStart, rangeEnd);
+	    if (parentAssign)
+	      fprintf(stderr, "       assign parent %s to\n", fullAssignPar);
+	    else // no print
+	      fprintf(stderr, "       set as no-print\n");
 	    exit(8);
 	  }
 
 	  for(int branch = rangeStart; branch <= rangeEnd; branch++) {
-	    if (branchParentsAssigned[branch]) {
-	      fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
-		      line, branch+1);
-	      exit(8);
+	    if (parentAssign) {
+	      if (branchParentsAssigned[branch]) {
+		fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
+			line, branch+1);
+		exit(8);
+	      }
+	      branchParentsAssigned[branch] = true;
+	      for(int p = 0; p < 2; p++)
+		thisGenBranchParents[branch*2 + p] = pars[p];
 	    }
-	    branchParentsAssigned[branch] = true;
-	    for(int p = 0; p < 2; p++)
-	      thisGenBranchParents[branch*2 + p] = pars[p];
+	    else { // no print
+	      // print 0 samples for <branch>
+	      if (thisGenNumSampsToPrint[branch] > 1) {
+		fprintf(stderr, "Warning: line %d in def: generation %d would print %d individuals, now set to 0\n",
+			line, curGen + 1, thisGenNumSampsToPrint[branch]);
+		warningGiven = true;
+	      }
+	      else if (thisGenNumSampsToPrint[branch] == 0) {
+		fprintf(stderr, "Warning: line %d in def: generation %d branch %d, no-print is redundant\n",
+			line, curGen + 1, branch + 1);
+		warningGiven = true;
+	      }
+	      thisGenNumSampsToPrint[branch] = 0;
+	    }
 	  }
 	}
 	else {
-	  if (branchParentsAssigned[curBranch]) {
-	    fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
-		    line, curBranch+1);
-	    exit(8);
+	  if (parentAssign) {
+	    if (branchParentsAssigned[curBranch]) {
+	      fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
+		      line, curBranch + 1);
+	      exit(8);
+	    }
+	    branchParentsAssigned[curBranch] = true;
+	    for(int p = 0; p < 2; p++)
+	      thisGenBranchParents[curBranch*2 + p] = pars[p];
 	  }
-	  branchParentsAssigned[curBranch] = true;
-	  for(int p = 0; p < 2; p++)
-	    thisGenBranchParents[curBranch*2 + p] = pars[p];
+	  else { // no print
+	    // print 0 samples for <curBranch>
+	    if (thisGenNumSampsToPrint[curBranch] > 1) {
+	      fprintf(stderr, "Warning: line %d in def: generation %d would print %d individuals, now set to 0\n",
+		      line, curGen + 1, thisGenNumSampsToPrint[curBranch]);
+	      warningGiven = true;
+	    }
+	    else if (thisGenNumSampsToPrint[curBranch] == 0) {
+	      fprintf(stderr, "Warning: line %d in def: generation %d branch %d, no-print is redundant\n",
+		      line, curGen + 1, curBranch + 1);
+	      warningGiven = true;
+	    }
+	    thisGenNumSampsToPrint[curBranch] = 0;
+	  }
 	}
 
-	assignBranches = &(assignBranches[i+1]); // go through next loop
+	assignBranches = &(assignBranches[i+1]); // go through next in loop
       }
     }
 
     if (startBranch != NULL) {
-      fprintf(stderr, "ERROR: line %d in def: range of branches to assign parents does not terminate\n",
-	      line);
+      fprintf(stderr, "ERROR: line %d in def: range of branches ", line);
+      if (parentAssign)
+	fprintf(stderr, "to assign parents ");
+      else // no print
+	fprintf(stderr, "set as no-print ");
+      fprintf(stderr, "does not terminate\n");
       exit(8);
     }
   }
@@ -1410,6 +1424,129 @@ void readBranchParents(int *numBranches, Parent *&thisGenBranchParents,
   assignDefaultBranchParents(numBranches[prevGen], numBranches[curGen],
 			     thisGenBranchParents, prevGen, prevGenSpouseNum,
 			     &branchParentsAssigned);
+
+  return warningGiven;
+}
+
+// In the branch specifications, read the parent assignments
+void readParents(int *numBranches, int prevGen, int **sexConstraints,
+		 int *&prevGenSpouseNum,
+		 vector< set<Parent,ParentComp>* > &spouseDependencies,
+		 char *assignBranches, char *assignPar[2], Parent pars[2],
+		 char *&fullAssignPar, const int i1Sex, char *&endptr,
+		 int line) {
+  int i;
+
+  // Find the second parent if present
+  for(i = 0; assignPar[0][i] != '_' && assignPar[0][i] != '\0'; i++);
+  if (assignPar[0][i] == '_') {
+    assignPar[0][i] = '\0';
+    assignPar[1] = &(assignPar[0][i+1]);
+  }
+
+  for(int p = 0; p < 2; p++) {
+    pars[p].branch = -1;
+    pars[p].gen = prevGen;
+  }
+  for(int p = 0; p < 2 && assignPar[p] != NULL && assignPar[p][0] != '\0'; p++){
+    // Check for generation number
+    char *genNumStr = NULL;
+    for(i = 0; assignPar[p][i] != '^' && assignPar[p][i] != '\0'; i++);
+    if (assignPar[p][i] == '^') {
+      // Have a generation number
+      if (p == 0) {
+	fprintf(stderr, "ERROR: line %d in def: parent assignment for branches %s gives generation\n",
+		line, assignBranches);
+	fprintf(stderr, "       number for the first parent, but this is only allowed for the second\n");
+	fprintf(stderr, "       parent; for example, 2:1_3^1 has branch 1 from previous generation\n");
+	fprintf(stderr, "       married to branch 3 from generation 1\n");
+	exit(3);
+      }
+      assignPar[p][i] = '\0';
+      genNumStr = &(assignPar[p][i+1]);
+      pars[p].gen = strtol(genNumStr, &endptr, 10) - 1; // 0 indexed => -1
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		line, assignBranches);
+	fprintf(stderr, "       malformed generation number string for second parent: %s\n",
+		genNumStr);
+	if (errno != 0)
+	  perror("strtol");
+	exit(5);
+      }
+      if (pars[p].gen > prevGen) {
+	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		line, assignBranches);
+	fprintf(stderr, "       generation number %s for second parent is after previous generation\n",
+		genNumStr);
+	exit(-7);
+      }
+      else if (pars[p].gen < 0) {
+	fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+		line, assignBranches);
+	fprintf(stderr, "       generation number %s for second parent is before first generation\n",
+		genNumStr);
+	exit(5);
+      }
+    }
+
+    pars[p].branch = strtol(assignPar[p], &endptr, 10) - 1; // 0 indexed => -1
+    if (errno != 0 || *endptr != '\0') {
+      fprintf(stderr, "ERROR: line %d in def: unable to parse parent assignment for branches %s\n",
+	      line, assignBranches);
+      if (errno != 0)
+	perror("strtol");
+      exit(2);
+    }
+    if (pars[p].branch < 0) {
+      fprintf(stderr, "ERROR: line %d in def: parent assignments must be of positive branch numbers\n",
+	      line);
+      exit(8);
+    }
+    else if (pars[p].branch >= numBranches[ pars[p].gen ]) {
+      fprintf(stderr, "ERROR: line %d in def: parent branch number %d is more than the number of\n",
+	      line, pars[p].branch+1);
+      fprintf(stderr, "       branches (%d) in generation %d\n",
+	      numBranches[ pars[p].gen ], pars[p].gen+1);
+      exit(8);
+    }
+    // so that we can print the parent assignment in case of errors below
+    if (genNumStr != NULL)
+      genNumStr[-1] = '^';
+  }
+  if (pars[0].branch == -1) {
+    // new founder
+    assert(pars[1].branch == -1);
+  }
+  else if (pars[1].branch == -1) {
+    // Have not yet assigned the numerical id of parent 1. Because the def
+    // file doesn't specify this, it is a founder, and one that hasn't been
+    // assigned before. As such, we'll get a unique number associated with a
+    // spouse of pars[0].branch. Negative values correspond to founders, so
+    // we decrement <prevGenSpouseNum>. (It is initialized to 0 above)
+    prevGenSpouseNum[ pars[0].branch ]--;
+    pars[1].branch = prevGenSpouseNum[ pars[0].branch ];
+  }
+  else {
+    if (pars[0].branch == pars[1].branch && pars[0].gen == pars[1].gen) {
+      fprintf(stderr, "ERROR: line %d in def: cannot have both parents be from same branch\n",
+	      line);
+      exit(8);
+    }
+    if (i1Sex >= 0) {
+      fprintf(stderr, "ERROR: line %d in def: cannot have fixed sex for i1 samples and marriages\n",
+	      line);
+      fprintf(stderr, "       between branches -- i1's will have the same sex and cannot reproduce\n");
+      exit(9);
+    }
+    updateSexConstraints(sexConstraints, pars, numBranches,
+			 spouseDependencies, line);
+  }
+
+  // so that we can print the parent assignment in case of errors below
+  if (assignPar[1] != NULL)
+    assignPar[1][-1] = '_';
+  fullAssignPar = assignPar[0];
 }
 
 // Given the branch indexes of two parents, adds constraints and error checks
@@ -1618,7 +1755,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
-    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
     int **sexConstraints = simDetails[ped].sexConstraints;
@@ -1657,7 +1794,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  // Determine how many founders and non-founders we need data for in
 	  // <branch>:
 	  int numFounders, numNonFounders;
-	  getPersonCounts(curGen, numGen, branch, numSampsToRetain,
+	  getPersonCounts(curGen, numGen, branch, numSampsToPrint,
 			  branchParents, branchNumSpouses, numFounders,
 			  numNonFounders);
 
@@ -1755,7 +1892,8 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  theSamples[ped][fam][curGen][branch][ind].haps[h].back().
 							  push_back(trivialSeg);
 
-		  if (numSampsToRetain[curGen] > 0) { // printing <curGen>?
+		  // print this branch?
+		  if (numSampsToPrint[curGen][branch] > 0) {
 		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
 			ped, fam, curGen, branch, ind, chrStart, chrEnd);
 		  }
@@ -1832,7 +1970,8 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		Haplotype &toGen = thePerson.haps[hapIdx].back();
 		generateHaplotype(toGen, theParent, curMap, coIntf, chrIdx,
 				  hapCarriers,
-				  (numSampsToRetain[curGen] > 0) ? ped : -1,
+				  (numSampsToPrint[curGen][branch] > 0) ? ped
+									: -1,
 				  fam, curGen, branch, ind,
 				  thePerson.fixedCOidxs);
 	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
@@ -1849,12 +1988,12 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 // Returns (via parameters) the number of founders and non-founders in the given
 // generation and branch.
-void getPersonCounts(int curGen, int numGen, int branch, int *numSampsToRetain,
+void getPersonCounts(int curGen, int numGen, int branch, int **numSampsToPrint,
 		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders) {
   if (curGen > 0 &&
       branchParents[curGen][branch*2].branch >= 0) { // have parent(s)?
-    numNonFounders = numSampsToRetain[curGen];
+    numNonFounders = numSampsToPrint[curGen][branch];
     if (numNonFounders == 0)
       // not saving, but need parent of next generation: the "primary" person
       numNonFounders = 1;
@@ -2069,7 +2208,7 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 		   int branch, int ind, bool printAllGens,
 		   FileOrGZ<IO_TYPE> *gzOut) {
   int thisBranchNumSpouses = getBranchNumSpouses(pedDetails, gen, branch);
-  bool shouldPrint = pedDetails.numSampsToRetain[gen] > 0 || printAllGens;
+  bool shouldPrint = pedDetails.numSampsToPrint[gen][branch] >0 || printAllGens;
 
   if (ind < thisBranchNumSpouses) {
     if (shouldPrint) {
@@ -2113,7 +2252,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
-    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
@@ -2121,9 +2260,9 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     for(int fam = 0; fam < numFam; fam++) {
       for(int gen = 0; gen < numGen; gen++) {
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
-	  if (numSampsToRetain[gen] > 0) {
+	  if (numSampsToPrint[gen][branch] > 0) {
 	    int numNonFounders, numFounders;
-	    getPersonCounts(gen, numGen, branch, numSampsToRetain,
+	    getPersonCounts(gen, numGen, branch, numSampsToPrint,
 			    branchParents, branchNumSpouses, numFounders,
 			    numNonFounders);
 	    int numPersons = numNonFounders + numFounders;
@@ -2292,13 +2431,13 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
   // Go through <theSegs> and print segments for samples that were listed as
   // printed in the def file
   for(int gen = 0; gen < pedDetails.numGen; gen++) {
-    if (pedDetails.numSampsToRetain[gen] <= 0)
-      continue; // no need to print IBD segment (generation not printed)
-
     for(int branch = 0; branch < pedDetails.numBranches[gen]; branch++) {
+      if (pedDetails.numSampsToPrint[gen][branch] <= 0)
+	continue; // no need to print IBD segment (generation not printed)
+
       int numNonFounders, numFounders;
       getPersonCounts(gen, pedDetails.numGen, branch,
-		      pedDetails.numSampsToRetain, pedDetails.branchParents,
+		      pedDetails.numSampsToPrint, pedDetails.branchParents,
 		      pedDetails.branchNumSpouses, numFounders, numNonFounders);
       int numPersons = numNonFounders + numFounders;
       for(int ind = 0; ind < numPersons; ind++) {
@@ -2335,8 +2474,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		segs[i].endPos >= segs[i + nextI].startPos) {
 	      // IBD2 region
 
-	      if (pedDetails.numSampsToRetain[ segs[i].otherGen ] <= 0)
-		continue; // don't to print IBD segment (generation not printed)
+	      if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
+					    [ segs[i].otherBranch ] <= 0)
+		continue; // don't to print IBD segment (branch not printed)
 
 	      // ensure this doesn't look like a HBD segment: shouldn't happen
 	      assert(gen != segs[i].otherGen || branch != segs[i].otherBranch ||
@@ -2411,8 +2551,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	    else {
 	      // IBD1 or HBD region:
 
-	      if (pedDetails.numSampsToRetain[ segs[i].otherGen ] <= 0)
-		continue; // don't to print IBD segment (generation not printed)
+	      if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
+					    [ segs[i].otherBranch ] <= 0)
+		continue; // don't to print IBD segment (branch not printed)
 
 	      if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
 		  ind == segs[i].otherInd)
@@ -2584,7 +2725,7 @@ void clearTheSegs(SimDetails &pedDetails,
       theSegs[gen].resize(numBranches);
     for(int branch = 0; branch < numBranches; branch++) {
       int numNonFounders, numFounders;
-      getPersonCounts(gen, numGen, branch, pedDetails.numSampsToRetain,
+      getPersonCounts(gen, numGen, branch, pedDetails.numSampsToPrint,
 		      pedDetails.branchParents,
 		      pedDetails.branchNumSpouses, numFounders,
 		      numNonFounders);
@@ -2936,7 +3077,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
 	int numFam = simDetails[ped].numFam;
 	int numGen = simDetails[ped].numGen;
-	int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+	int **numSampsToPrint = simDetails[ped].numSampsToPrint;
 	int *numBranches = simDetails[ped].numBranches;
 	Parent **branchParents = simDetails[ped].branchParents;
 	int **branchNumSpouses = simDetails[ped].branchNumSpouses;
@@ -2944,9 +3085,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	for(int fam = 0; fam < numFam; fam++)
 	  for(int gen = 0; gen < numGen; gen++)
 	    for(int branch = 0; branch < numBranches[gen]; branch++)
-	      if (numSampsToRetain[gen] > 0 || idOut) { // need to print?
+	      if (numSampsToPrint[gen][branch] > 0 || idOut) { // need to print?
 		int numNonFounders, numFounders;
-		getPersonCounts(gen, numGen, branch, numSampsToRetain,
+		getPersonCounts(gen, numGen, branch, numSampsToPrint,
 				branchParents, branchNumSpouses, numFounders,
 				numNonFounders);
 		int numPersons = numNonFounders + numFounders;
@@ -3101,7 +3242,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
       int numFam = simDetails[ped].numFam;
       int numGen = simDetails[ped].numGen;
-      int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+      int **numSampsToPrint = simDetails[ped].numSampsToPrint;
       int *numBranches = simDetails[ped].numBranches;
       Parent **branchParents = simDetails[ped].branchParents;
       int **branchNumSpouses = simDetails[ped].branchNumSpouses;
@@ -3109,9 +3250,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int fam = 0; fam < numFam; fam++)
 	for(int gen = 0; gen < numGen; gen++)
 	  for(int branch = 0; branch < numBranches[gen]; branch++)
-	    if (numSampsToRetain[gen] > 0) {
+	    if (numSampsToPrint[gen][branch] > 0) {
 	      int numNonFounders, numFounders;
-	      getPersonCounts(gen, numGen, branch, numSampsToRetain,
+	      getPersonCounts(gen, numGen, branch, numSampsToPrint,
 			      branchParents, branchNumSpouses, numFounders,
 			      numNonFounders);
 	      int numPersons = numNonFounders + numFounders;
@@ -3224,7 +3365,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
     int numFam = simDetails[ped].numFam;
     int numGen = simDetails[ped].numGen;
-    int *numSampsToRetain = simDetails[ped].numSampsToRetain;
+    int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
@@ -3235,7 +3376,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int gen = 0; gen < numGen; gen++) {
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
 	  int numNonFounders, numFounders;
-	  getPersonCounts(gen, numGen, branch, numSampsToRetain, branchParents,
+	  getPersonCounts(gen, numGen, branch, numSampsToPrint, branchParents,
 			  branchNumSpouses, numFounders, numNonFounders);
 	  int numPersons = numNonFounders + numFounders;
 
@@ -3297,7 +3438,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	    // print sex and phenotype; phenotype depends on whether the same
 	    // gets printed:
 	    int sex = theSamples[ped][fam][gen][branch][ind].sex;
-	    int pheno = (numSampsToRetain[gen] > 0) ? 1 : -9;
+	    int pheno = (numSampsToPrint[gen][branch] > 0) ? 1 : -9;
 	    fprintf(out, "%d %d\n", sex+1, pheno);
 	  }
 	}
