@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <assert.h>
 #include <zlib.h>
+#include <limits.h>
 #include "cmdlineopts.h"
 #include "cointerfere.h"
 
@@ -2967,6 +2968,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   }
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
+  bool readMeta = false;
 
   while (in.getline() >= 0) { // lines of input VCF
     if (in.buf[0] == '#' && in.buf[1] == '#') {
@@ -2977,6 +2979,14 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
     if (in.buf[0] == '#') {
       // header line with sample ids
+      
+      if (readMeta) {
+	fprintf(stderr, "\n");
+	fprintf(stderr, "ERROR: multiple copies of line giving sample ids: please remove all headers\n");
+	fprintf(stderr, "       not at the beginning of the input VCF\n");
+	exit(2);
+      }
+      readMeta = true;
 
       // skip all the header fields relating to meta-data:
       char *saveptr;
