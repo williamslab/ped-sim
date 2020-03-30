@@ -1,0 +1,27 @@
+# Slightly more advanced cases (best to look at other defs before this one)
+
+# First cousins once removed: (4th degree)
+# print one branch in generation 3, but not the parent of branch 1 in
+# generation 4, and print branch 1 in generation 4
+#
+def fc1r 10 4
+3 1 2  1n
+4 1 1
+
+# Half-avuncular (3rd degree)
+# make half-siblings in generation 2, but print only one branch in that
+# generation
+# print the child of the non-printed branch (i.e., generation 3, branch 1)
+#
+def half-av 500 3
+2 1 2  1:1 2:1  1n
+3 1 1
+
+# Half-first cousins once removed
+# make half-first cousins in generation 3, but print only one branch in that
+# generation
+# print the child of the non-printed branch (i.e., generation 4, branch 1)
+def half-fc1r 500 4
+2 0 2  1:1 2:1
+3 1 2  1n
+4 1 1
