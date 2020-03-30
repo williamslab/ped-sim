@@ -85,8 +85,9 @@ does not produce any output genetic data.
 Compiling
 ---------
 
-To compile the Ped-sim program, most Linux/Unix-based users should simply be
-able to type
+Ped-sim requires the [boost](https://www.boost.org/) developmental libraries to
+be installed to compile. Most Linux/Unix-based users should simply be able to
+compile by running
 
     make
 
