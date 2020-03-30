@@ -11,13 +11,19 @@ def grandparent 10 3
 
 # AVUNCULAR
 #
-# generates 10 simulated pedigrees with three generations, but prints the last 2
-# each generation has only 1 branch
-# prints data for the second generation samples (parents and one sibling of one
-# parent) and the third generation (child or neice/nephew)
+# generates 10 simulated pedigrees with three generations
+# there are two branches in the second generation and both contain the children
+# of the first generation samples (so they contain two full siblings)
+# there is only one branch in the third generation, a child of branch 1 in
+# generation 2
+# we print one person in the second and third generations, but the '1n' branch
+# specification in generation 2 means that the members of branch 1 will not
+# be printed. This means that the parents of the third generation branch will
+# not be printed
+# so we get two samples from generation 2 branch 2, and generation 3 branch 1
 def avuncular 10 3
-2 2 1
-3 1
+2 1 2  1n
+3 1 1
 
 # HALF-SIBLING
 #
