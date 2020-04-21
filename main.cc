@@ -3103,7 +3103,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 				numNonFounders);
 		int numPersons = numNonFounders + numFounders;
 		for(int ind = 0; ind < numPersons; ind++) {
-		  out.printf("\t");
+		  if (numSampsToPrint[gen][branch] > 0)
+		    out.printf("\t");
 		  bool curIsFounder = printSampleId(NULL, simDetails[ped],
 						    fam, gen, branch, ind,
 						    /*printAllGens=*/ false,
