@@ -110,7 +110,7 @@ struct Person {
 // For the <hapCarriers> structure -- stores the sample id that inherited (or
 // is the founder of) a given haplotype
 struct InheritRecord {
-  InheritRecord() { }
+  InheritRecord() { assert(false); }
   InheritRecord(unsigned int p, int f, int g, int b, int i, int s, int e) {
     ped = p;
     fam = f;
@@ -127,6 +127,8 @@ struct InheritRecord {
   int ind;
   int startPos;
   int endPos;
+
+  vector< pair<int, int> > hbd;
 };
 
 struct IBDRecord {
@@ -138,6 +140,8 @@ struct IBDRecord {
     chrIdx = ci;
     startPos = start;
     endPos = end;
+
+    assert(startPos <= endPos);
   }
   int otherGen;
   int otherBranch;
@@ -239,7 +243,8 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      char *bpFile);
-bool compInheritRec(const InheritRecord &a, const InheritRecord &b);
+bool compInheritRecSamp(const InheritRecord &a, const InheritRecord &b);
+bool compInheritRecStart(const InheritRecord &a, const InheritRecord &b);
 bool compIBDRecord(const IBDRecord &a, const IBDRecord &b);
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
@@ -2298,7 +2303,19 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   fclose(out);
 }
 
-bool compInheritRec(const InheritRecord &a, const InheritRecord &b) {
+bool compInheritRecSamp(const InheritRecord &a, const InheritRecord &b) {
+  return (a.ped < b.ped) ||
+	 (a.ped == b.ped && a.fam < b.fam) ||
+	 (a.ped == b.ped && a.fam == b.fam && a.gen < b.gen) ||
+	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	  a.branch < b.branch) ||
+	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	  a.branch == b.branch && a.ind < b.ind) ||
+	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	  a.branch == b.branch && a.ind == b.ind && a.startPos < b.startPos);
+}
+
+bool compInheritRecStart(const InheritRecord &a, const InheritRecord &b) {
   return a.startPos < b.startPos;
 }
 
@@ -2345,76 +2362,168 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
   int totalFounderHaps = hapCarriers.size();
   unsigned int numChrs = geneticMap.size();
-  vector<InheritRecord> overlapRecs;
 
   // Have a record of all individuals that inherited each founder haplotype
   // Go through this one founder haplotype and one chromosome at a time to
-  // find the overlapping IBD segments
+  // find the overlapping IBD and also HBD segments
   for (int foundHapNum = 0; foundHapNum < totalFounderHaps; foundHapNum++) {
     for(unsigned int chrIdx = 0; chrIdx < numChrs; chrIdx++) {
-      sort(hapCarriers[foundHapNum][chrIdx].begin(),
-	   hapCarriers[foundHapNum][chrIdx].end(), compInheritRec);
-      for(auto it = hapCarriers[foundHapNum][chrIdx].begin();
-	       it != hapCarriers[foundHapNum][chrIdx].end();
-	       it++) {
-	InheritRecord &curRec = *it;
+      // First find all HBD regions
+      // Do this first because multiple InheritRecords for the same sample that
+      // span the same region will result in multiple IBD segments to that
+      // region. To prevent this, we merge overlapping InheritRecords and
+      // store away the <HBD> record. Actually do add back some IBD segments
+      // so that when both samples have HBD regions, we get an IBD2 segment,
+      // but without the code below, we'd get four IBD segments at such a region
 
+      // sort by sample id to make finding HBD regions easy
+      sort(hapCarriers[foundHapNum][chrIdx].begin(),
+	   hapCarriers[foundHapNum][chrIdx].end(), compInheritRecSamp);
+
+      // find the HBD regions
+      for(auto it1 = hapCarriers[foundHapNum][chrIdx].begin();
+	       it1 != hapCarriers[foundHapNum][chrIdx].end();
+	       it1++) {
+	for(auto it2 = it1 + 1;
+		 it2 != hapCarriers[foundHapNum][chrIdx].end(); ) {
+	  if (it1->ped != it2->ped || it1->fam != it2->fam ||
+	      it1->gen != it2->gen || it1->branch != it2->branch ||
+	      it1->ind != it2->ind)
+	    // sorting means there are no records after <it2> that are the same
+	    // sample as <it1> -- stop looping
+	    break;
+
+	  // <it1> and <it2> are for the same sample, so the same person
+	  // inherited <foundHapNum>
+	  // ... do the regions overlap?
+	  if (it2->startPos < it1->endPos) {
+	    // <it1> and <it2> include an HBD section
+	    // store the HBD region:
+	    int hbdStart = max(it1->startPos, it2->startPos);
+	    int hbdEnd = min(it1->endPos, it2->endPos);
+	    it1->hbd.emplace_back(hbdStart, hbdEnd);
+
+	    // Now ensure that the retained InheritRecord spans the whole region
+	    it1->endPos = max(it1->endPos, it2->endPos);
+
+	    // lastly, remove <it2> so that other samples only include one IBD
+	    // segment over any HBD region
+	    // TODO: this is a bit slow
+	    it2 = hapCarriers[foundHapNum][chrIdx].erase(it2);
+	  }
+	  else {
+	    it2++;
+	  }
+	}
+      }
+    }
+  }
+
+  // Now find and store all IBD (and HBD) segments
+  for (int foundHapNum = 0; foundHapNum < totalFounderHaps; foundHapNum++) {
+    for(unsigned int chrIdx = 0; chrIdx < numChrs; chrIdx++) {
+      // here we sort by segment start to find IBD segments
+      sort(hapCarriers[foundHapNum][chrIdx].begin(),
+	   hapCarriers[foundHapNum][chrIdx].end(), compInheritRecStart);
+
+      // find all the IBD segments
+      for(auto it1 = hapCarriers[foundHapNum][chrIdx].begin();
+	       it1 != hapCarriers[foundHapNum][chrIdx].end();
+	       it1++) {
 	// <theSegs> stores segments for a given pedigree and family, and to
 	// save space, it gets reused across these.
 	// If we're about to start analyzing a new pedigree or family, print
 	// the IBD segments found below and clear out <theSegs>.
-	if ((int) curRec.ped != curPed || (int) curRec.fam != curFam) {
+	if ((int) it1->ped != curPed || (int) it1->fam != curFam) {
 	  // print stored segments, locating any IBD2
 	  if (curPed >= 0)
 	    printIBD(out, simDetails[curPed], curFam, theSegs, geneticMap,
 		     sexSpecificMaps);
 	  // update:
-	  curPed = curRec.ped;
-	  curFam = curRec.fam;
+	  curPed = it1->ped;
+	  curFam = it1->fam;
 
 	  clearTheSegs(simDetails[curPed], theSegs);
 	}
 
-	// Iterate over InheritRecords that came before <curRec> to search for
-	// overlap (which implies an IBD segment)
-	auto overIt = overlapRecs.begin();
-	while (overIt != overlapRecs.end()) {
-	  if (curRec.startPos < overIt->endPos) {
-	    // Have IBD segment! would print, but we have to find IBD2 regions
-	    // before we can do so.
-	    assert(curRec.ped == overIt->ped && curRec.fam == overIt->fam);
-	    assert(curRec.startPos >= overIt->startPos);
-
-	    int endPos = min(curRec.endPos, overIt->endPos);
-	    // Store away in the entry associated with the numerically lower id
-	    if (curRec.gen < overIt->gen ||
-		(curRec.gen == overIt->gen && curRec.branch < overIt->branch) ||
-		(curRec.gen == overIt->gen && curRec.branch == overIt->branch &&
-		 curRec.ind < overIt->ind)) {
-	      theSegs[ curRec.gen ][ curRec.branch ][ curRec.ind ].
-		emplace_back(overIt->gen, overIt->branch, overIt->ind,
-		    chrIdx, curRec.startPos, endPos);
-	    }
-	    else {
-	      theSegs[ overIt->gen ][ overIt->branch ][ overIt->ind ].
-		emplace_back(curRec.gen, curRec.branch, curRec.ind,
-		    chrIdx, curRec.startPos, endPos);
-	    }
-	    overIt++;
-	  }
-	  else {
-	    // Segment ends before the current start: cannot match this or any
-	    // upcoming segments
-	    // TODO: this is a bit slow
-	    overIt = overlapRecs.erase(overIt);
-	  }
+	// Add in the HBD regions
+	for(auto hbdIt = it1->hbd.begin();
+		 hbdIt != it1->hbd.end();
+		 hbdIt++) {
+	  theSegs[ it1->gen ][ it1->branch ][ it1->ind ].
+	    emplace_back(it1->gen, it1->branch, it1->ind,
+			 chrIdx, hbdIt->first, hbdIt->second);
 	}
-	overlapRecs.push_back(curRec);
-      }
 
-      overlapRecs.clear();
-    }
-  }
+	// Iterate over InheritRecords after <it1> to search for overlap
+	// (which implies an IBD segment)
+	for(auto it2 = it1 + 1;
+		 it2 != hapCarriers[foundHapNum][chrIdx].end();
+		 it2++) {
+	  if (it2->startPos > it1->endPos)
+	    // <it2> and later segments don't overlap <it1>: they're sorted by
+	    // start position
+	    break;
+
+	  // Have IBD segment! would print, but we have to find IBD2 regions
+	  // before we can do so.
+	  assert(it1->ped == it2->ped && it1->fam == it2->fam);
+	  assert(it1->startPos <= it2->startPos);
+
+	  int startPos = it2->startPos;
+	  int endPos = min(it1->endPos, it2->endPos);
+
+	  auto samp1 = it1;
+	  auto samp2 = it2;
+
+	  // Store away in the entry associated with the numerically lower id
+	  if (it2->gen < it1->gen ||
+	      (it2->gen == it1->gen && it2->branch < it1->branch) ||
+	      (it2->gen == it1->gen && it2->branch == it1->branch &&
+	       it2->ind < it1->ind)) {
+	    samp1 = it2;
+	    samp2 = it1;
+	  }
+
+	  // We got all HBD segments above, so the two samples should be
+	  // different
+	  assert(it1->gen != it2->gen || it1->branch != it2->branch ||
+		 it1->ind != it2->ind);
+
+	  theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
+	    emplace_back(samp2->gen, samp2->branch, samp2->ind,
+			 chrIdx, startPos, endPos);
+
+	  // if HBD in both <samp1> and <samp2> spans part of this region,
+	  // then there is IBD2 and we need more IBD segments
+	  for(auto samp1HBD = samp1->hbd.begin();
+		   samp1HBD != samp1->hbd.end();
+		   samp1HBD++) {
+
+	    for(auto samp2HBD = samp2->hbd.begin();
+		     samp2HBD != samp2->hbd.end();
+		     samp2HBD++) {
+	      if (samp2HBD->first > samp1HBD->second)
+		// this and later HBD segments in <samp2> don't overlap
+		// <samp1HBD>
+		break;
+
+	      if (samp2HBD->second >= samp1HBD->first &&
+		  samp2HBD->first <= samp1HBD->second) {
+		// overlapping HBD: add another IBD segment for IBD2
+		int thisStart = max(samp1HBD->first, samp2HBD->first);
+		int thisEnd = min(samp1HBD->second, samp2HBD->second);
+
+		theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
+		  emplace_back(samp2->gen, samp2->branch, samp2->ind,
+			       chrIdx, thisStart, thisEnd);
+	      }
+	    } // HBD in samp2 loop
+	  } // HBD in samp1 loop
+	} // it2 loop
+      } // it1 loop
+    } // chrIdx loop
+  } // foundHapNum loop
 
   if (curPed >= 0)
     printIBD(out, simDetails[curPed], curFam, theSegs, geneticMap,
