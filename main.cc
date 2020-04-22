@@ -111,14 +111,12 @@ struct Person {
 // is the founder of) a given haplotype
 struct InheritRecord {
   InheritRecord() { }
-  InheritRecord(unsigned int p, int f, int g, int b, int i, int hidx, int s,
-		int e) {
+  InheritRecord(unsigned int p, int f, int g, int b, int i, int s, int e) {
     ped = p;
     fam = f;
     gen = g;
     branch = b;
     ind = i;
-    hapIdx = hidx;
     startPos = s;
     endPos = e;
   }
@@ -127,20 +125,16 @@ struct InheritRecord {
   int gen;
   int branch;
   int ind;
-  int hapIdx;
   int startPos;
   int endPos;
 };
 
 struct IBDRecord {
   IBDRecord() { assert(false); }
-  IBDRecord(int og, int ob, int oi, int ohidx, int hidx, int ci, int start,
-	    int end) {
+  IBDRecord(int og, int ob, int oi, int ci, int start, int end) {
     otherGen = og;
     otherBranch = ob;
     otherInd = oi;
-    otherHapIdx = ohidx;
-    thisHapIdx = hidx;
     chrIdx = ci;
     startPos = start;
     endPos = end;
@@ -148,8 +142,6 @@ struct IBDRecord {
   int otherGen;
   int otherBranch;
   int otherInd;
-  int otherHapIdx;
-  int thisHapIdx;
   int chrIdx;
   int startPos;
   int endPos;
@@ -233,12 +225,12 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<COInterfere> &coIntf, unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
 		       int ped, int fam, int curGen, int branch, int ind,
-		       int hapIdx, unsigned int fixedCOidxs[2]);
+		       unsigned int fixedCOidxs[2]);
 void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      int switchPos, unsigned int curSegIdx[2], int &curHap,
 	      unsigned int chrIdx,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
-	      int ped, int fam, int curGen, int branch, int ind, int hapIdx);
+	      int ped, int fam, int curGen, int branch, int ind);
 int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
 template<typename IO_TYPE = FILE *>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
@@ -1426,7 +1418,7 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
   }
 
   // TODO: As a space optimization, could compress the spouseDependencies
-  //       vector more. When combining two sets, the indexes of one of the sets
+  //       vector more. When combining two sets, the indexes of one of the set
   //       are no longer used, but the size of the spouseDependencies list
   //       still accounts for them.
   assert(spouseDependencies.size() % 2 == 0);
@@ -1905,7 +1897,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  // print this branch?
 		  if (numSampsToPrint[curGen][branch] > 0) {
 		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
-			ped, fam, curGen, branch, ind, h, chrStart, chrEnd);
+			ped, fam, curGen, branch, ind, chrStart, chrEnd);
 		  }
 
 		}
@@ -1982,7 +1974,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 				  hapCarriers,
 				  (numSampsToPrint[curGen][branch] > 0) ? ped
 									: -1,
-				  fam, curGen, branch, ind, hapIdx,
+				  fam, curGen, branch, ind,
 				  thePerson.fixedCOidxs);
 	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
 	    } // <ind>
@@ -2047,7 +2039,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       vector<COInterfere> &coIntf, unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
 		       int ped, int fam, int curGen, int branch, int ind,
-		       int hapIdx, unsigned int fixedCOidxs[2]) {
+		       unsigned int fixedCOidxs[2]) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
   unsigned int curSegIdx[2] = { 0, 0 };
@@ -2124,7 +2116,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
       // copy Segments from <curHap>
       copySegs(toGenerate, parent, nextSegStart, switchPos, curSegIdx, curHap,
-	       chrIdx, hapCarriers, ped, fam, curGen, branch, ind, hapIdx);
+	       chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
     }
   }
   else {
@@ -2134,11 +2126,10 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
     for(auto it = theCOs.begin(); it != theCOs.end(); it++) {
       // copy Segments from <curHap>
       copySegs(toGenerate, parent, nextSegStart, /*switchPos=*/ *it, curSegIdx,
-	       curHap, chrIdx, hapCarriers, ped, fam, curGen, branch, ind,
-	       hapIdx);
+	       curHap, chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
     }
   }
-
+  
 
   // copy through to the end of the chromosome:
   for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
@@ -2148,7 +2139,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
     if (ped >= 0) {
       hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	  ped, fam, curGen, branch, ind, hapIdx, nextSegStart, seg.endPos);
+	  ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
       nextSegStart = seg.endPos + 1;
     }
   }
@@ -2160,7 +2151,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      int switchPos, unsigned int curSegIdx[2], int &curHap,
 	      unsigned int chrIdx,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
-	      int ped, int fam, int curGen, int branch, int ind, int hapIdx) {
+	      int ped, int fam, int curGen, int branch, int ind) {
   for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
 							  curSegIdx[curHap]++) {
     Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
@@ -2172,7 +2163,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, fam, curGen, branch, ind, hapIdx, nextSegStart, switchPos);
+	    ped, fam, curGen, branch, ind, nextSegStart, switchPos);
 	nextSegStart = switchPos + 1;
       }
       break; // done copying
@@ -2182,7 +2173,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, fam, curGen, branch, ind, hapIdx, nextSegStart, seg.endPos);
+	    ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
 	nextSegStart = seg.endPos + 1;
       }
     }
@@ -2356,7 +2347,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   unsigned int numChrs = geneticMap.size();
   vector<InheritRecord> overlapRecs;
 
-  // Have a record of all individuals that inherited each founder haplotype;
+  // Have a record of all individuals that inherited each founder haplotype
   // Go through this one founder haplotype and one chromosome at a time to
   // find the overlapping IBD segments
   for (int foundHapNum = 0; foundHapNum < totalFounderHaps; foundHapNum++) {
@@ -2389,9 +2380,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	auto overIt = overlapRecs.begin();
 	while (overIt != overlapRecs.end()) {
 	  if (curRec.startPos < overIt->endPos) {
-	    // Have IBD segment! would print, but we have to find IBD2 and HBD
-	    // regions before we can do so. (Also want to merge segments that
-	    // are adjacent to each other.)
+	    // Have IBD segment! would print, but we have to find IBD2 regions
+	    // before we can do so.
 	    assert(curRec.ped == overIt->ped && curRec.fam == overIt->fam);
 	    assert(curRec.startPos >= overIt->startPos);
 
@@ -2403,14 +2393,12 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		 curRec.ind < overIt->ind)) {
 	      theSegs[ curRec.gen ][ curRec.branch ][ curRec.ind ].
 		emplace_back(overIt->gen, overIt->branch, overIt->ind,
-			     overIt->hapIdx, curRec.hapIdx, chrIdx,
-			     curRec.startPos, endPos);
+		    chrIdx, curRec.startPos, endPos);
 	    }
 	    else {
 	      theSegs[ overIt->gen ][ overIt->branch ][ overIt->ind ].
 		emplace_back(curRec.gen, curRec.branch, curRec.ind,
-			     curRec.hapIdx, overIt->hapIdx, chrIdx,
-			     curRec.startPos, endPos);
+		    chrIdx, curRec.startPos, endPos);
 	    }
 	    overIt++;
 	  }
@@ -2437,18 +2425,17 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   delete [] theSegs;
 }
 
-// print stored segments, locating any IBD2 or HBD regions and merging adjacent
-// segments with each other
+// print stored segments, locating any IBD2 regions
 void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
 	      vector< pair<char*, vector<PhysGeneticPos>* > > &geneticMap,
 	      bool sexSpecificMaps) {
   // Go through <theSegs> and print segments for samples that were listed as
-  // to-be-printed in the def file
+  // printed in the def file
   for(int gen = 0; gen < pedDetails.numGen; gen++) {
     for(int branch = 0; branch < pedDetails.numBranches[gen]; branch++) {
       if (pedDetails.numSampsToPrint[gen][branch] <= 0)
-	continue; // no need to print IBD segment (branch not printed)
+	continue; // no need to print IBD segment (generation not printed)
 
       int numNonFounders, numFounders;
       getPersonCounts(gen, pedDetails.numGen, branch,
@@ -2468,15 +2455,6 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	// merge segments that are adjacent to each other
 	mergeSegments(segs);
 	int numSegs = segs.size();
-
-	// TODO: remove:
-	for(int i = 0; i < numSegs - 1; i++) {
-	  assert(segs[i].otherGen != segs[i + 1].otherGen ||
-		 segs[i].otherBranch != segs[i + 1].otherBranch ||
-		 segs[i].otherInd != segs[i + 1].otherInd ||
-		 segs[i].chrIdx != segs[i + 1].chrIdx ||
-		 segs[i].startPos <= segs[i + 1].startPos);
-	}
 
 	// Now print segments, identifying any IBD2 and printing it as such
 	for(int i = 0; i < numSegs; i++) {
@@ -2502,93 +2480,12 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 					    [ segs[i].otherBranch ] <= 0)
 		continue; // don't to print IBD segment (branch not printed)
 
-	      // ensure this doesn't look like an HBD segment: shouldn't happen
-	      // because merging should prevent overlapping HBD segments
+	      // ensure this doesn't look like a HBD segment: shouldn't happen
 	      assert(gen != segs[i].otherGen || branch != segs[i].otherBranch ||
 		     ind != segs[i].otherInd);
 
 	      // <seg[i]> should start before <seg[i + nextI]>: they're sorted
 	      assert(segs[i].startPos <= segs[i + nextI].startPos);
-
-	      // TODO: rm
-//	      // If the current or other sample have an HBD region, we'll end
-//	      // up with multiple IBD segments that are only a reflection of the
-//	      // HBD, not necessarily IBD2. Without deleting the excess, we'll
-//	      // get aberrant IBD2 and/or more than one IBD segment printed
-//	      // that spans the same region.
-//	      // Get a count of the number of HBD regions and do the bookkeeping
-//	      // below.
-//	      int HBDcount = 0;
-//
-//	      if (segs[i].thisHapIdx  == segs[i + nextI].thisHapIdx ||
-//		  segs[i].otherHapIdx == segs[i + nextI].otherHapIdx)
-//		// The two IBD segments are on the same haplotype but overlap
-//		// each other. Happens if both haplotypes in one (or both)
-//		// sample(s) are HBD.
-//		HBDcount++;
-//	      if (i + nextI + 1 < numSegs && // valid next segment?
-//		  segs[i].otherGen    == segs[i + nextI + 1].otherGen &&
-//		  segs[i].otherBranch == segs[i + nextI + 1].otherBranch &&
-//		  segs[i].otherInd    == segs[i + nextI + 1].otherInd &&
-//		  segs[i].chrIdx      == segs[i + nextI + 1].chrIdx &&
-//		  segs[i].endPos      >= segs[i + nextI + 1].startPos) {
-//		// Next IBD segment _also_ overlaps this region
-//
-//		// confirm HBD
-//		assert(segs[i].thisHapIdx  == segs[i + nextI + 1].thisHapIdx ||
-//		       segs[i].otherHapIdx == segs[i + nextI + 1].otherHapIdx||
-//		       segs[i].thisHapIdx  == segs[i + nextI + 1].thisHapIdx ||
-//		       segs[i].otherHapIdx == segs[i + nextI + 1].otherHapIdx);
-//		HBDcount++;
-//	      }
-//
-//	      if (HBDcount > 0) {
-//		// TODO:
-//		// delete <HBDcount> segments, retaining one that spans the
-//		// full length of the IBD region
-//	      }
-
-	      if (segs[i].thisHapIdx  == segs[i + nextI].thisHapIdx ||
-		  segs[i].otherHapIdx == segs[i + nextI].otherHapIdx) {
-		// The two IBD segments are on the same haplotype but overlap
-		// each other. The way this can happen is if both haplotypes in
-		// one (or both) sample(s) are HBD.
-		// Here we need to delete a segment; if both samples have an
-		// HBD segment, we need to delete two segments
-		int HBDcount = 1;
-
-		// check double HBD:
-		if (i + nextI + 1 < numSegs && // valid next segment?
-		    segs[i].otherGen == segs[i + nextI + 1].otherGen &&
-		    segs[i].otherBranch == segs[i + nextI + 1].otherBranch &&
-		    segs[i].otherInd == segs[i + nextI + 1].otherInd &&
-		    segs[i].chrIdx == segs[i + nextI + 1].chrIdx &&
-		    segs[i].endPos >= segs[i + nextI + 1].startPos) {
-		  // ensure HBD
-		  assert(segs[i].thisHapIdx == segs[i + nextI + 1].thisHapIdx ||
-			 segs[i].otherHapIdx ==segs[i + nextI + 1].otherHapIdx||
-			 segs[i].thisHapIdx == segs[i + nextI + 1].thisHapIdx ||
-			 segs[i].otherHapIdx ==segs[i + nextI + 1].otherHapIdx);
-
-		  HBDcount = 2;
-		}
-
-		// TODO:
-		// delete <HBDcount> segments, retaining one that spans the
-		// full length of the IBD region
-	      }
-	      else {
-		// should not have another IBD segment of this same overlapping
-		// type after this. Such a segment would prove that there's an
-		// HBD region, which we caught just above
-		bool haveHBD = (i + nextI + 1 < numSegs &&
-		    segs[i].otherGen    == segs[i + nextI + 1].otherGen &&
-		    segs[i].otherBranch == segs[i + nextI + 1].otherBranch &&
-		    segs[i].otherInd    == segs[i + nextI + 1].otherInd &&
-		    segs[i].chrIdx      == segs[i + nextI + 1].chrIdx &&
-		    segs[i].endPos      >= segs[i + nextI + 1].startPos);
-		assert(!haveHBD);
-	      }
 
 	      // any preceding IBD1 segment?
 	      if (segs[i].startPos < segs[i + nextI].startPos) {
@@ -2609,17 +2506,15 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				 sexSpecificMaps);
 
 	      // likely another segment just after the IBD2 end, but that region
-	      // must be checked against later <segs> for IBD2 status. To
-	      // ensure this is done properly, we update the startPos of the
-	      // continuing segment:
+	      // must be checked against later <segs>. To ensure this is done
+	      // properly, we update the startPos of the continuing segment:
 	      if (segs[i].endPos == segs[i + nextI].endPos) {
 		// corner case: both finished, increment i so that
-		// <seg[i+1]> through <seg[i + nextI]> get skipped
+		// <seg[i+1]> through <seg[i + nextI]> gets skipped
 		// (they're already printed)
-		// NOTE: EFFECT WITH CODE JUST AFTER WHILE LOOP IS i += nextI;
-		//       loop will increment so that i += nextI + 1
+		// NOTE: EFFECT WITH CODE JUST AFTER WHILE LOOP IS i += nextI
 		i++;
-		//done = true; // no need to loop (commented b/c done == true)
+		//done = true; // no need to loop (commented b/c done is true)
 	      }
 	      else if (segs[i].endPos > ibd2End) {
 		// <segs[i]> continues; should increment nextI and loop:
@@ -2630,14 +2525,6 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		done = false; // loop
 	      }
 	      else {
-		// TODO: remove:
-		for(int j = i + nextI; j < numSegs - 1; j++) {
-		  assert(segs[j].otherGen != segs[j + 1].otherGen ||
-		      segs[j].otherBranch != segs[j + 1].otherBranch ||
-		      segs[j].otherInd != segs[j + 1].otherInd ||
-		      segs[j].chrIdx != segs[j + 1].chrIdx ||
-		      segs[j].startPos <= segs[j + 1].startPos);
-		}
 		// <segs[i + nextI]> continues. This is the intuitive case: <i>
 		// will increment so <segs[i + (nextI - 1) + 1]> will be
 		// considered next (see code after the while loop)
@@ -2646,9 +2533,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		segs[i + nextI].startPos = ibd2End + 1;
 		assert(segs[i + nextI].startPos <= segs[i + nextI].endPos);
 
-		// Annoying thing is that now segs[i + nextI] -- with its new
-		// start position -- may be out of order.
-		// This loop moves it to the right position later in <segs>:
+		// Annoying thing is that now segs[i + nextI], with its new
+		// start position, may be out of order.
+		// This loop moves it to the right position:
 		int initI = i + nextI;
 		for(int j = 0; initI + j + 1 < numSegs &&
 			       !compIBDRecord(segs[initI + j],
@@ -2660,16 +2547,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		  segs[initI + j] = segs[initI + j + 1];
 		  segs[initI + j + 1] = tmp;
 		}
-		//done = true; // no need to loop (commented b/c done == true)
-
-		// TODO: remove:
-		for(int j = i + nextI; j < numSegs - 1; j++) {
-		  assert(segs[j].otherGen != segs[j + 1].otherGen ||
-		      segs[j].otherBranch != segs[j + 1].otherBranch ||
-		      segs[j].otherInd != segs[j + 1].otherInd ||
-		      segs[j].chrIdx != segs[j + 1].chrIdx ||
-		      segs[j].startPos <= segs[j + 1].startPos);
-		}
+		//done = true; // no need to loop (commented b/c done is true)
 	      }
 	    }
 	    else {
@@ -2734,15 +2612,14 @@ void mergeSegments(vector<IBDRecord> &segs) {
 
     // from <i + numRemoved + 1> search for a segment to merge
     // with current index <i>
-//    int HBDtoMerge = 0; // TODO: rm
     for(int j = numRemoved + 1; (i + j) < numSegs; j++) {
       if (segs[i + j].otherGen == -1)
 	continue; // skip already-merged segments
 
-      if (segs[i].otherGen    != segs[i + j].otherGen ||
+      if (segs[i].otherGen != segs[i + j].otherGen ||
 	  segs[i].otherBranch != segs[i + j].otherBranch ||
-	  segs[i].otherInd    != segs[i + j].otherInd ||
-	  segs[i].chrIdx      != segs[i + j].chrIdx)
+	  segs[i].otherInd != segs[i + j].otherInd ||
+	  segs[i].chrIdx != segs[i + j].chrIdx)
 	// must be same other person/chromosome in order to merge
 	// due to sorting, if we encounter a different person, we know that
 	// no future segments will match
@@ -2754,117 +2631,11 @@ void mergeSegments(vector<IBDRecord> &segs) {
 	break;
       if (segs[i].endPos + 1 == segs[i + j].startPos) {
 	// merge!
-
-	// Check for case where there are two segments that can be merged with.
-	// This will happen in inbreeding cases (or rarely if a recombination
-	// lands at the same site)
-
-	for (int k = 1; (i + j + k) < numSegs; k++) { // find next valid seg
-	  if (segs[i + j + k].otherGen == -1)
-	    continue; // skip already-merged segments
-
-	  if (segs[i].otherGen    != segs[i + j + k].otherGen ||
-	      segs[i].otherBranch != segs[i + j + k].otherBranch ||
-	      segs[i].otherInd    != segs[i + j + k].otherInd ||
-	      segs[i].chrIdx      != segs[i + j + k].chrIdx)
-	    // parallel condition to that at the top of the <j> loop
-	    break;
-	  if (segs[i].endPos + 1 < segs[i + j + k].startPos)
-	    // parallel condition to one above
-	    break;
-
-	  if (segs[i].endPos + 1 == segs[i + j + k].startPos) {
-	    // can either merge segs[i] with segs[i + j] or segs[i + j + k]
-	    // use the one where the two thisHapIdx's are equal
-	    assert(segs[i].thisHapIdx  == segs[i + j].thisHapIdx || // sanity
-		   segs[i].thisHapIdx  == segs[i + j + k].thisHapIdx ||
-		   segs[i].otherHapIdx == segs[i + j].otherHapIdx ||
-		   segs[i].otherHapIdx == segs[i + j + k].otherHapIdx);
-	    if (segs[i].thisHapIdx  != segs[i + j].thisHapIdx ||
-		segs[i].otherHapIdx != segs[i + j].otherHapIdx)
-	      j += k;
-	  }
-	}
-	segs[i].endPos = segs[i + j].endPos;
+	segs[i].endPos = segs[i+j].endPos;
 	segs[i + j].otherGen = -1;
-	// continue searching for additional segments to merge with <i>
+	// continue searching for additional segments to merge wth <i>
       }
-      // TODO: remove: should do the merging first and then do another pass
-//      else {
-//	// checking for the need to delete HBD segments
-//	// segs[i] and segs[i+j] overlap
-//	// check for IBD within HBD regions
-//	if (HBDtoMerge) {
-//	  // already encountered a pair of segments indicating one of the
-//	  // two samples is HBD. This third segment suggests both samples are
-//	  // HBD. There should be one more IBD segment overlapping the interval,
-//	  // and to get things reported right, we'll delete two of the four
-//
-//	  // last segment should be at i + j + 1:
-//	  int HBDtoMerge4 = j + 1;
-//	  assert(segs[i].otherGen == segs[i + HBDtoMerge4].otherGen &&
-//		 segs[i].otherBranch == segs[i + HBDtoMerge4].otherBranch &&
-//		 segs[i].otherInd == segs[i + HBDtoMerge4].otherInd &&
-//		 segs[i].chrIdx == segs[i + HBDtoMerge4].chrIdx &&
-//		 segs[i].endPos >= segs[i + HBDtoMerge4].startPos);
-//
-//	  // simple now: we'll retain those two segments where
-//	  //   segs[<idx>].thisHapIdx == segs[<idx>].otherHapIdx
-//	  // and delete the others
-//	  int numDeleted = 0;
-//	  int indexes[4] = { i, i + HBDtoMerge, i + j, i + HBDtoMerge4 };
-//	  for(int k = 0; k < 4; k++) {
-//	    int checkDelete = indexes[k];
-//	    if (segs[checkDelete].thisHapIdx != segs[checkDelete].otherHapIdx) {
-//	      numDeleted++;
-//	      segs[checkDelete].otherGen = -1;
-//	    }
-//	  }
-//	  assert(numDeleted == 2);
-//
-//	  // did segs[i] get deleted? need to fix this: deletions are dealt
-//	  // with in other code and that code assumes segs[i] (and earlier) are
-//	  // all good segments
-//	  if (segs[i].otherGen == -1) {
-//	    for(int k = 1; k < 4; k++) {
-//	      int checkDeleted = indexes[k];
-//	      if (segs[checkDeleted].otherGen >= 0) {
-//		// not deleted. to position i
-//		segs[i] = segs[checkDeleted];
-//		// now to avoid duplicates, mark that copied segment as deleted:
-//		segs[checkDeleted].otherGen = -1;
-//	      }
-//	    }
-//	  }
-//
-//	  HBDtoMerge = 0; // dealt with the merge above
-//	}
-//	else {
-//	  if (segs[i].thisHapIdx == segs[i + j].thisHapIdx ||
-//	      segs[i].otherHapIdx == segs[i + j].otherHapIdx) {
-//	    // Have IBD to an HBD segment: must delete at least one segment.
-//	    // What isn't yet clear is whether we should be merging two regions
-//	    // or only one. We'll record this index so that we ultimately do
-//	    // a merge, and will decide in a future iteration whether to merge
-//	    // two segments or just this one
-//	    HBDtoMerge = j;
-//	  }
-//	}
-//      }
     }
-
-    // TODO: rm
-//    if (HBDtoMerge != 0) {
-//      // HBD region is IBD to another non-HBD sample. Only need to merge one
-//      // segment (vs. code above that deals with merging two):
-//      int newStart = min(segs[i].startPos, segs[i + HBDtoMerge].startPos);
-//      int newEnd = max(segs[i].endPos, segs[i + HBDtoMerge].endPos);
-//      assert(segs[i].startPos == segs[i + HBDtoMerge].startPos ||
-//	    segs[i].endPos == segs[i + HBDtoMerge].endPos);
-//      segs[i].startPos = newStart;
-//      segs[i].endPos = newEnd;
-//      segs[i + HBDtoMerge].otherGen = -1;
-//    }
   }
   // Resize <segs> post-merging
   numSegs -= numRemoved;
