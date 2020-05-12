@@ -729,3 +729,14 @@ family id (first column) in the fam file.
 each *copy* of all the family structures in the file. It may be helpful to run
 Ped-sim with the number of copies of each structure set to 1 when using this
 script to check your structures.
+
+**Known bug:** If the def file calls for all individuals to be printed, the
+`plot-fam.R` script will give the error
+
+    Error in pedigree(dat[sel, 2], dat[sel, 3], dat[sel, 4], dat[sel, 5],  :
+    Invalid code for affected status
+    Execution halted
+
+This is caused by having the 'affected' status be the same for all samples. A
+workaround is to edit the fam file and set the affected (column 6) status for
+at least one individual to something different, e.g., -9.
