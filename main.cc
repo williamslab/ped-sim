@@ -191,18 +191,18 @@ struct FixedCOs {
 // Function decls
 void readDef(vector<SimDetails> &simDetails, char *defFile);
 void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-				Parent *&thisGenBranchParents, int prevGen,
+				Parent **thisGenBranchParents, int prevGen,
 				int *prevGenSpouseNum = NULL,
 				vector<bool> *branchParentsAssigned = NULL);
-bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
+bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		    int *thisGenNumSampsToPrint, int curGen,
-		    int **sexConstraints, int *&prevGenSpouseNum,
+		    int **sexConstraints, int **prevGenSpouseNum,
 		    vector<bool> &branchParentsAssigned,
 		    vector< set<Parent,ParentComp>* > &spouseDependencies,
 		    const int i1Sex, const char *delim, char *&saveptr,
 		    char *&endptr, int line);
 void readParents(int *numBranches, int prevGen, int **sexConstraints,
-		 int *&prevGenSpouseNum,
+		 int **prevGenSpouseNum,
 		 vector< set<Parent,ParentComp>* > &spouseDependencies,
 		 char *assignBranches, char *assignPar[2], Parent pars[2],
 		 char *&fullAssignPar, const int i1Sex, char *&endptr,
@@ -729,7 +729,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       // assign default parents for each branch:
       if (i > 0)
 	assignDefaultBranchParents(curNumBranches[i-1], curNumBranches[i],
-				   curBranchParents[i], /*prevGen=*/i-1);
+				   &(curBranchParents[i]), /*prevGen=*/i-1);
       // assign default of 0 samples to print
       curNumSampsToPrint[i] = new int[ curNumBranches[i] ];
       for (int b = 0; b < curNumBranches[i]; b++)
@@ -779,18 +779,24 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     // are necessarily founders so there should not be any specification.
     if (generation - 1 > 0) {
       bool warning = readBranchSpec(curNumBranches,
-			curBranchParents[generation - 1],
+			&curBranchParents[generation - 1],
 			curNumSampsToPrint[generation - 1],
 			/*curGen=*/generation - 1, curSexConstraints,
-			/*prevSpouseNum=*/curBranchNumSpouses[generation - 2],
+			/*prevSpouseNum=*/&curBranchNumSpouses[generation - 2],
 			branchParentsAssigned, spouseDependencies, curI1Sex,
 			delim, saveptr, endptr, line);
       warningGiven = warningGiven || warning;
     }
-    else if (strtok_r(NULL, delim, &saveptr) != NULL) {
-      fprintf(stderr, "ERROR: line %d in def: first generation cannot have parent specifications\n",
-	      line);
-      exit(8);
+    else {
+      bool warning = readBranchSpec(curNumBranches,
+				    /*thisGenBranchParents=NA=*/NULL,
+				    curNumSampsToPrint[generation - 1],
+				    /*curGen=*/generation - 1,
+				    /*sexConstraints=NA=*/NULL,
+				    /*prevGenSpouseNum=NA=*/NULL,
+				    branchParentsAssigned, spouseDependencies,
+				    curI1Sex, delim, saveptr, endptr, line);
+      warningGiven = warningGiven || warning;
     }
   }
 
@@ -1128,7 +1134,7 @@ void FixedCOs::read(const char *fixedCOfile,
 // Gives the default parent assignment for any branches that have not had
 // their parents explicitly specified.
 void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
-				Parent *&thisGenBranchParents, int prevGen,
+				Parent **thisGenBranchParents, int prevGen,
 				int *prevGenSpouseNum,
 				vector<bool> *branchParentsAssigned) {
   // how many new branches is each previous branch the parent of?
@@ -1137,9 +1143,9 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     multFactor = 1; // for branches that survive, map prev branch i to cur i
 
   // allocate space to store the parents of each branch
-  if (thisGenBranchParents == NULL) {
-    thisGenBranchParents = new Parent[2 * thisGenNumBranches];
-    if (thisGenBranchParents == NULL) {
+  if (*thisGenBranchParents == NULL) {
+    *thisGenBranchParents = new Parent[2 * thisGenNumBranches];
+    if (*thisGenBranchParents == NULL) {
       printf("ERROR: out of memory");
       exit(5);
     }
@@ -1157,8 +1163,8 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
       int curBranch = prevB * multFactor + multB;
       if (branchParentsAssigned && (*branchParentsAssigned)[curBranch])
 	continue; // skip assignment of branches that were assigned previously
-      thisGenBranchParents[curBranch*2].gen = prevGen;
-      thisGenBranchParents[curBranch*2].branch = prevB;
+      (*thisGenBranchParents)[curBranch*2].gen = prevGen;
+      (*thisGenBranchParents)[curBranch*2].branch = prevB;
       if (!spouseNumDefined) {
 	if (prevGenSpouseNum) {
 	  prevGenSpouseNum[ prevB ]--;
@@ -1168,8 +1174,8 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 	  spouseNum = -1;
 	spouseNumDefined = true;
       }
-      thisGenBranchParents[curBranch*2 + 1].gen = prevGen;
-      thisGenBranchParents[curBranch*2 + 1].branch = spouseNum;
+      (*thisGenBranchParents)[curBranch*2 + 1].gen = prevGen;
+      (*thisGenBranchParents)[curBranch*2 + 1].branch = spouseNum;
     }
   }
   // For any branches in this generation that are not an exact multiple of
@@ -1181,18 +1187,18 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
     if (branchParentsAssigned && (*branchParentsAssigned)[newB])
       continue; // skip assignment of branches that were assigned previously
     // undefined parents for excess branches: new founders
-    thisGenBranchParents[newB*2].gen = prevGen;
-    thisGenBranchParents[newB*2].branch =
-				  thisGenBranchParents[newB*2 + 1].branch = -1;
+    (*thisGenBranchParents)[newB*2].gen = prevGen;
+    (*thisGenBranchParents)[newB*2].branch =
+				(*thisGenBranchParents)[newB*2 + 1].branch = -1;
   }
 }
 
 // Reads in and performs state changes for branch specifications including
 // both parent assignments and no-print directives
 // Returns true iff a warning has been printed
-bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
+bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		    int *thisGenNumSampsToPrint, int curGen,
-		    int **sexConstraints, int *&prevGenSpouseNum,
+		    int **sexConstraints, int **prevGenSpouseNum,
 		    vector<bool> &branchParentsAssigned,
 		    vector< set<Parent,ParentComp>* > &spouseDependencies,
 		    const int i1Sex, const char *delim, char *&saveptr,
@@ -1200,40 +1206,43 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
   bool warningGiven = false;
   int prevGen = curGen - 1;
 
-  assert(prevGenSpouseNum == NULL);
-  prevGenSpouseNum = new int[numBranches[prevGen]];
-  if (prevGenSpouseNum == NULL) {
-    printf("ERROR: out of memory\n");
-    exit(5);
-  }
-  for(int b = 0; b < numBranches[prevGen]; b++)
-    // What number have we assigned through for founder spouses of individuals
-    // in the previous generation? Note that founders have an id (in the code
-    // for the purposes of <curBranchParents>) that are always negative and
-    // that by default we assign one founder spouse to marry one person in
-    // each branch in the previous generation (see assignDefaultBranchParents())
-    prevGenSpouseNum[b] = 0;
+  assert(curGen == 0 || *prevGenSpouseNum == NULL);
+  if (curGen > 0) {
+    *prevGenSpouseNum = new int[numBranches[prevGen]];
+    if (*prevGenSpouseNum == NULL) {
+      printf("ERROR: out of memory\n");
+      exit(5);
+    }
+    for(int b = 0; b < numBranches[prevGen]; b++)
+      // What number have we assigned through for founder spouses of
+      // individuals in the previous generation? Note that founders have an id
+      // (in the code for the purposes of <curBranchParents>) that are always
+      // negative and that by default we assign one founder spouse to marry one
+      // person in each branch in the previous generation (see
+      // assignDefaultBranchParents())
+      (*prevGenSpouseNum)[b] = 0;
 
-  thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
-  if (thisGenBranchParents == NULL) {
-    printf("ERROR: out of memory\n");
-    exit(5);
-  }
+    *thisGenBranchParents = new Parent[ 2 * numBranches[curGen] ];
+    if (*thisGenBranchParents == NULL) {
+      printf("ERROR: out of memory\n");
+      exit(5);
+    }
 
-  sexConstraints[prevGen] = new int[numBranches[prevGen]];
-  if (sexConstraints[prevGen] == NULL) {
-    printf("ERROR: out of memory\n");
-    exit(5);
-  }
-  for(int i = 0; i < numBranches[prevGen]; i++)
-    sexConstraints[prevGen][i] = -1;
+    sexConstraints[prevGen] = new int[numBranches[prevGen]];
+    if (sexConstraints[prevGen] == NULL) {
+      printf("ERROR: out of memory\n");
+      exit(5);
+    }
+    for(int i = 0; i < numBranches[prevGen]; i++)
+      sexConstraints[prevGen][i] = -1;
 
-  // so far, all the branches in the current generation are assigned default
-  // parents; track which branches get explicitly assigned and throw an error
-  // if the same branch is assigned more than once
-  branchParentsAssigned.clear();
-  for(int i = 0; i < numBranches[curGen]; i++)
-    branchParentsAssigned.push_back(false);
+    // so far, all the branches in the current generation are assigned default
+    // parents; track which branches get explicitly assigned and throw an error
+    // if the same branch is assigned more than once
+    branchParentsAssigned.clear();
+    for(int i = 0; i < numBranches[curGen]; i++)
+      branchParentsAssigned.push_back(false);
+  }
 
   while (char *assignToken = strtok_r(NULL, delim, &saveptr)) {
     char *assignBranches = assignToken; // will add '\0' at ':'
@@ -1260,6 +1269,12 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
       exit(8);
     }
     assignToken[i] = '\0';
+
+    if (curGen == 0 && parentAssign) {
+      fprintf(stderr, "ERROR: line %d in def: first generation cannot have parent specifications\n",
+	      line);
+      exit(8);
+    }
 
     if (noPrint) {
       // expect a space after the 'n': check this
@@ -1362,7 +1377,7 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
 	      }
 	      branchParentsAssigned[branch] = true;
 	      for(int p = 0; p < 2; p++)
-		thisGenBranchParents[branch*2 + p] = pars[p];
+		(*thisGenBranchParents)[branch*2 + p] = pars[p];
 	    }
 	    else { // no print
 	      // print 0 samples for <branch>
@@ -1389,7 +1404,7 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
 	    }
 	    branchParentsAssigned[curBranch] = true;
 	    for(int p = 0; p < 2; p++)
-	      thisGenBranchParents[curBranch*2 + p] = pars[p];
+	      (*thisGenBranchParents)[curBranch*2 + p] = pars[p];
 	  }
 	  else { // no print
 	    // print 0 samples for <curBranch>
@@ -1428,16 +1443,17 @@ bool readBranchSpec(int *numBranches, Parent *&thisGenBranchParents,
   //       still accounts for them.
   assert(spouseDependencies.size() % 2 == 0);
 
-  assignDefaultBranchParents(numBranches[prevGen], numBranches[curGen],
-			     thisGenBranchParents, prevGen, prevGenSpouseNum,
-			     &branchParentsAssigned);
+  if (curGen > 0)
+    assignDefaultBranchParents(numBranches[prevGen], numBranches[curGen],
+			       thisGenBranchParents, prevGen, *prevGenSpouseNum,
+			       &branchParentsAssigned);
 
   return warningGiven;
 }
 
 // In the branch specifications, read the parent assignments
 void readParents(int *numBranches, int prevGen, int **sexConstraints,
-		 int *&prevGenSpouseNum,
+		 int **prevGenSpouseNum,
 		 vector< set<Parent,ParentComp>* > &spouseDependencies,
 		 char *assignBranches, char *assignPar[2], Parent pars[2],
 		 char *&fullAssignPar, const int i1Sex, char *&endptr,
@@ -1531,8 +1547,8 @@ void readParents(int *numBranches, int prevGen, int **sexConstraints,
     // assigned before. As such, we'll get a unique number associated with a
     // spouse of pars[0].branch. Negative values correspond to founders, so
     // we decrement <prevGenSpouseNum>. (It is initialized to 0 above)
-    prevGenSpouseNum[ pars[0].branch ]--;
-    pars[1].branch = prevGenSpouseNum[ pars[0].branch ];
+    (*prevGenSpouseNum)[ pars[0].branch ]--;
+    pars[1].branch = (*prevGenSpouseNum)[ pars[0].branch ];
   }
   else {
     if (pars[0].branch == pars[1].branch && pars[0].gen == pars[1].gen) {
@@ -2024,7 +2040,7 @@ void getPersonCounts(int curGen, int numGen, int branch, int **numSampsToPrint,
     if (branchNumSpouses[curGen])
       // We store the number of branch spouses as negative: must negate
       // + 1 because the "main" person in this branch is also a founder:
-      // that person is married to the <-prevGenSpouseNum[curGen][branch]>
+      // that person is married to the <-(*prevGenSpouseNum)[curGen][branch]>
       // other founders
       numFounders = -branchNumSpouses[curGen][branch] + 1;
     else if (curGen != numGen - 1)
