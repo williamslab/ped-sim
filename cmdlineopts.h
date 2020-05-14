@@ -7,7 +7,7 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.1.4"
+#define VERSION_NUMBER	"1.1.5"
 #define RELEASE_DATE	"14 May 2020"
 
 class CmdLineOpts {
