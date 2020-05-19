@@ -2412,7 +2412,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	  // <it1> and <it2> are for the same sample, so the same person
 	  // inherited <foundHapNum>
 	  // ... do the regions overlap?
-	  if (it2->startPos < it1->endPos) {
+	  if (it2->startPos <= it1->endPos) {
 	    // <it1> and <it2> include an HBD section
 	    // store the HBD region:
 	    int hbdStart = max(it1->startPos, it2->startPos);
