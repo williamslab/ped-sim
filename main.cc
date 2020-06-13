@@ -3301,11 +3301,24 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       continue; // no genetic map information for this position: skip
 
     // read/save the ID, REF, ALT, QUAL, FILTER, INFO, and FORMAT fields:
-    // TODO! ought to deal with non-trivial formats -- what if GT isn't first
-    //       field
-    char *otherFields[7];
-    for(int i = 0; i < 7; i++)
+    char *otherFields[6];
+    for(int i = 0; i < 6; i++)
       otherFields[i] = strtok_r(NULL, tab, &saveptr);
+
+    // Find index of GT field in format string
+    char *formatStr = strtok_r(NULL, tab, &saveptr);
+    char *saveptr2;
+    char *formatCurField = strtok_r(formatStr, ":", &saveptr2);
+    int gtField = 0;
+    for ( ; formatCurField != NULL && strcmp(formatCurField, "GT") != 0;
+         gtField++) {
+      formatCurField = strtok_r(NULL, ":", &saveptr2);
+    }
+    if (formatCurField == NULL) {
+      fprintf(stderr, "ERROR: in VCF: no GT field at CHROM %s, POS %s\n",
+	      chrom, posStr);
+      exit(6);
+    }
 
     // count the number of alleles present at this variant; generally this is
     // 2, but the number of (comma separated) values in the ALT field gives the
@@ -3326,13 +3339,20 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     // read in/store the haplotypes
     int inputIndex = 0;
     int numStored = 0;
-    char *token;
-    while((token = strtok_r(NULL, tab, &saveptr)) &&
+    char *sampStr;
+    while((sampStr = strtok_r(NULL, tab, &saveptr)) &&
 					      numStored < numInputSamples * 2) {
+      // tokenize <sampStr> on ":" until we reach the <gtField>th entry
+      char *saveptrGT;
+      char *theGT = strtok_r(sampStr, ":", &saveptrGT);
+      for(int tokenIndex = 0; tokenIndex < gtField; tokenIndex++)
+	theGT = strtok_r(NULL, ":", &saveptrGT);
+
+      // Now break apart the genotype into the alleles of the two haplotypes
       char *alleles[2];
-      char *saveptr2;
-      alleles[0] = strtok_r(token, bar, &saveptr2);
-      alleles[1] = strtok_r(NULL, bar, &saveptr2);
+      char *saveptrAlleles;
+      alleles[0] = strtok_r(theGT, bar, &saveptrAlleles);
+      alleles[1] = strtok_r(NULL, bar, &saveptrAlleles);
 
       for(int h = 0; h < 2; h++) {
 	if (alleles[h][0] == '.') {
@@ -3354,17 +3374,17 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       // error check:
       if (alleles[1] == NULL) {
 	printf("ERROR: VCF contains data field %s, which is not phased\n",
-		token);
+		theGT);
 	exit(5);
       }
-      if (strtok_r(NULL, bar, &saveptr2) != NULL) {
+      if (strtok_r(NULL, bar, &saveptrAlleles) != NULL) {
 	printf("ERROR: multiple '|' characters in data field\n");
 	exit(5);
       }
     }
 
     bool fewer = numStored < numInputSamples * 2;
-    bool more = token != NULL;
+    bool more = sampStr != NULL;
     if (fewer || more) {
       printf("ERROR: line in VCF file has data for %s than the indicated %d samples\n",
 	     (more) ? "more" : "fewer", numInputSamples);
@@ -3373,8 +3393,9 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
     // Print this line to the output file
     out.printf("%s\t%s", chrom, posStr);
-    for(int i = 0; i < 7; i++)
+    for(int i = 0; i < 6; i++)
       out.printf("\t%s", otherFields[i]);
+    out.printf("\tGT");
 
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
       int numFam = simDetails[ped].numFam;
