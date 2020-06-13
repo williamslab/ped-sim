@@ -413,9 +413,7 @@ When genetic data are needed, an input VCF is required to be provided with the
 `-i` option. Given such a VCF, Ped-sim randomly samples individuals from this
 data and uses them as founders.  The VCF must contain phased data for all
 individuals, with no missing data for any site. As most phasers automatically
-impute missing data, the latter requirement should be to easy to meet. __At
-present, Ped-sim only supports the GT FORMAT field, so please remove additional
-fields before using Ped-sim.__
+impute missing data, the latter requirement should be to easy to meet.
 
 The input VCF file can be gzipped, and if it is, Ped-sim prints the output VCF
 in gzipped format (but this output VCF is not bgzipped).
