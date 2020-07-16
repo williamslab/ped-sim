@@ -288,8 +288,9 @@ int main(int argc, char **argv) {
   if (!success)
     return -1;
 
-  int outPrefixLen = strlen(CmdLineOpts::outPrefix);
-  char *outFile = new char[ outPrefixLen + 7 + 1 ]; //+7 for .vcf.gz, + 1 for \0
+  // +13 for -everyone.fam, + 1 for \0
+  int outFileLen = strlen(CmdLineOpts::outPrefix)+ 13 + 1;
+  char *outFile = new char[outFileLen];
   if (outFile == NULL) {
     printf("ERROR: out of memory");
     exit(5);
@@ -435,6 +436,16 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "done.\n");
   }
 
+  if (CmdLineOpts::printFam) {
+    for(int o = 0; o < 2; o++)
+      fprintf(outs[o], "Printing fam file... ");
+    fflush(stdout);
+    sprintf(outFile, "%s-everyone.fam", CmdLineOpts::outPrefix);
+    printFam(simDetails, theSamples, /*famFile=*/ outFile);
+    for(int o = 0; o < 2; o++)
+      fprintf(outs[o], "done.  (Do not use with PLINK data: see README.md)\n");
+  }
+
   if (CmdLineOpts::inVCFfile) {
     for(int o = 0; o < 2; o++) {
       fprintf(outs[o], "Reading input VCF meta data... ");
@@ -459,14 +470,11 @@ int main(int argc, char **argv) {
     for(int o = 0; o < 2; o++)
       fprintf(outs[o], "done.\n");
   }
-
-  for(int o = 0; o < 2; o++)
-    fprintf(outs[o], "Printing fam file... ");
-  fflush(stdout);
-  sprintf(outFile, "%s.fam", CmdLineOpts::outPrefix);
-  printFam(simDetails, theSamples, /*famFile=*/ outFile);
-  for(int o = 0; o < 2; o++)
-    fprintf(outs[o], "done.\n");
+  else {
+    for(int o = 0; o < 2; o++)
+      fprintf(outs[o], "\nTo simulate genetic data, must use an input VCF with %d founders.\n",
+	      totalFounderHaps / 2);
+  }
 
   fclose(log);
 

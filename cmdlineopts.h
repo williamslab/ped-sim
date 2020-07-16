@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.1.7"
-#define RELEASE_DATE	"13 Jun 2020"
+#define VERSION_NUMBER	"1.1.8"
+#define RELEASE_DATE	"16 Jul 2020"
 
 class CmdLineOpts {
   public:
@@ -45,6 +45,9 @@ class CmdLineOpts {
     // User-supplied random seed OR set to the automatically generated seed
     // later
     static unsigned int randSeed;
+
+    // Print the fam file?
+    static int printFam;
 
     // Print the bp file?
     static int printBP; 

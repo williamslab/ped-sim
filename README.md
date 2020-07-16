@@ -16,9 +16,9 @@ Table of Contents
       * [Crossover model](#crossover-model)
       * [Output IBD segments file](#output-ibd-segments-file)
       * [Output VCF file](#output-vcf-file)
-      * [Output fam file](#output-fam-file)
       * [Output log file](#output-log-file)
       * [Sample ids for simulated individuals](#samp-ids)
+      * [Output fam file](#output-fam-file)
       * [Output BP file](#output-bp-file)
       * [Extra notes: sex-specific maps](#extra-notes-sex-specific-maps)
       * [Citing Ped-sim](#citing-ped-sim-and-related-papers)
@@ -46,9 +46,8 @@ To use a non-interference crossover model, i.e., a Poisson model, use:
 
     ./ped-sim -d <in.def> -m <map file> -o <out_prefix> --pois
 
-The above both produce three output files: `[out_prefix].seg` containing IBD
-segments, `[out_prefix].fam`, a PLINK format fam file with all simulated
-relatives, and `[out_prefix].log`, a log of what Ped-sim printed to stdout.
+The above both produce a file `[out_prefix].seg` containing IBD segments and
+`[out_prefix].log`, a log of what Ped-sim printed to stdout.
 
 With the above input options, Ped-sim does not produce genetic data, but only
 IBD segments for artificial (ungenotyped) relatives. To simulate relatives with
@@ -489,16 +488,6 @@ description of the sample ids of the simulated individuals.
 
 ------------------------------------------------------
 
-Output fam file
----------------
-
-The simulator produces a PLINK format fam file with the simulated pedigree
-structures. This fam file contains all generated samples, including those that
-are not requested to be printed in the def file. This enables the relationships
-between all samples to be determined from the fam file alone.
-
-------------------------------------------------------
-
 Output log file
 ---------------
 
@@ -531,6 +520,25 @@ prefix id but end in `s[#]`, with the number ranging from 1 to the total number
 of spouses of the `i1` individual. The number of spouses will only be 1 unless
 parent specifications appear in the def file that indicate more founder spouses
 should be used.
+
+------------------------------------------------------
+
+Output fam file
+---------------
+
+If using the `--fam` option, the simulator produces a PLINK format fam file
+called `[out_prefix]-everyone.fam` with the simulated pedigree structures.
+This fam file contains **all** generated samples, including those that are not
+requested to be printed in the def file. This enables the relationships between
+all samples to be determined from the fam file alone.
+
+Because the fam file contains all simulated samples, including those that are
+not requested to be printed, it is for reference only (and to visualize
+structures with [plot-fam.R](#plotting-pedigree-structures-plot-famr).
+**It should not be used as a replacement for PLINK fam files with PLINK bed,
+bim, and fam data:** use one converted to from the VCF. (Running plink 1.9
+with `--vcf [out_prefix].vcf --out [out_prefix] --make-bed` generates data
+in PLINK format.)
 
 ------------------------------------------------------
 
