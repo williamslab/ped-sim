@@ -119,6 +119,7 @@ struct InheritRecord {
     ind = i;
     startPos = s;
     endPos = e;
+    assert(startPos <= endPos);
   }
   unsigned int ped;
   int fam;
@@ -2183,6 +2184,9 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      int ped, int fam, int curGen, int branch, int ind) {
   for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
 							  curSegIdx[curHap]++) {
+    if (nextSegStart > switchPos)
+      // no distance to copy the segment over
+      break;
     Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
     if (seg.endPos >= switchPos) {
       // last segment to copy, and we will break it at <switchPos>
