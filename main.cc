@@ -2170,8 +2170,14 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
     if (ped >= 0) {
       hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
 	  ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
-      nextSegStart = seg.endPos + 1;
     }
+    nextSegStart = seg.endPos + 1;
+  }
+
+  int prevEndPos = -1;
+  for(auto it = toGenerate.begin(); it != toGenerate.end(); it++) {
+    assert(it->endPos > prevEndPos);
+    prevEndPos = it->endPos;
   }
 }
 
@@ -2197,8 +2203,8 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
 	    ped, fam, curGen, branch, ind, nextSegStart, switchPos);
-	nextSegStart = switchPos + 1;
       }
+      nextSegStart = switchPos + 1;
       break; // done copying
     }
     else {
@@ -2207,8 +2213,8 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
 	    ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
-	nextSegStart = seg.endPos + 1;
       }
+      nextSegStart = seg.endPos + 1;
     }
   }
   assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
