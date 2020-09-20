@@ -1,4 +1,4 @@
-CPPSRCS= main.cc cmdlineopts.cc cointerfere.cc
+CPPSRCS= main.cc cmdlineopts.cc readdef.cc geneticmap.cc cointerfere.cc fileorgz.cc simulate.cc bpvcffam.cc ibdseg.cc fixedcos.cc
 CSRCS= memcpy.c
 CPPOBJS= $(patsubst %.cc,%.o,$(CPPSRCS))
 COBJS= $(patsubst %.c,%.o,$(CSRCS))

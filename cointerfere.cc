@@ -54,6 +54,106 @@ void COInterfere::initStartProb() {
   }
 }
 
+// Reads in interference parameters nu and p for males and females from
+// <interfereFile> and stores them in <intfParams>.
+void COInterfere::read(vector<COInterfere> &coIntf, char *interfereFile,
+		       GeneticMap &map, bool &sexSpecificMaps) {
+  if (!sexSpecificMaps) {
+    fprintf(stderr, "ERROR: Must use sex specific genetic maps in order to simulate with interference\n");
+    exit(6);
+  }
+
+  size_t bytesRead = 1024;
+  char *buffer = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL) {
+    printf("ERROR: out of memory");
+    exit(5);
+  }
+  const char *delim = " \t\n";
+
+  FILE *in = fopen(interfereFile, "r");
+  if (!in) {
+    printf("ERROR: could not open interference file %s!\n", interfereFile);
+    exit(1);
+  }
+
+  // Which chromosome index (into <map>) are we on? This allows us to ensure
+  // the names of the chromosomes listed in the interference file match those
+  // in <map>
+  unsigned int chrIdx = 0;
+  while (getline(&buffer, &bytesRead, in) >= 0) {
+    char *chrom, *nuStr[2], *pStr[2];
+    char *saveptr, *endptr;
+    double nu[2], p[2];
+
+    if (buffer[0] == '#')
+      continue; // comment
+
+    // get chromosome tokens:
+    chrom = strtok_r(buffer, delim, &saveptr);
+
+    if (chrIdx >= map.size()) {
+      fprintf(stderr, "ERROR: read chrom %s from interference file, but last genetic map chromosome\n",
+	      chrom);
+      fprintf(stderr, "       is %s\n", map.chromName(chrIdx - 1));
+      exit(5);
+    }
+
+    // read remaining tokens:
+    for(int i = 0; i < 2; i++) {
+      nuStr[i] = strtok_r(NULL, delim, &saveptr);
+      pStr[i] = strtok_r(NULL, delim, &saveptr);
+
+      nu[i] = strtod(nuStr[i], &endptr);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: chrom %s, could not parse %s interference nu parameter\n",
+		chrom, (i == 0) ? "male" : "female");
+	if (errno != 0)
+	  perror("strtod");
+	exit(5);
+      }
+      p[i] = strtod(pStr[i], &endptr);
+      if (errno != 0 || *endptr != '\0') {
+	fprintf(stderr, "ERROR: chrom %s, could not parse %s interference p parameter\n",
+		chrom, (i == 0) ? "male" : "female");
+	if (errno != 0)
+	  perror("strtod");
+	exit(5);
+      }
+    }
+
+    char *tok;
+    if ((tok = strtok_r(NULL, delim, &saveptr)) != NULL) {
+      fprintf(stderr, "ERROR: read extra token %s in interference file (chrom %s)\n",
+	      tok, chrom);
+      exit(5);
+    }
+
+    if (strcmp(chrom, map.chromName(chrIdx)) != 0) {
+      fprintf(stderr, "ERROR: order of interference chromosomes different from genetic map:\n");
+      fprintf(stderr, "       expected chromosome %s in interference file, read %s\n",
+	      map.chromName(chrIdx), chrom);
+      exit(10);
+    }
+
+    // Get the genetic lengths of the male and female maps for this chromosome
+    double len[2];
+    for(int i = 0; i < 2; i++)
+      len[i] = map.chromGenetLength(chrIdx, /*sex=*/ i) / 100; // in Morgans
+    coIntf.emplace_back(nu, p, len);
+    chrIdx++;
+  }
+
+  if (chrIdx != map.size()) {
+    fprintf(stderr, "ERROR: read %u chromosomes from interference file, but genetic map has %lu\n",
+	    chrIdx, map.size());
+    exit(5);
+  }
+
+  free(buffer);
+  fclose(in);
+}
+
 // locations: stores sampled crossover locations (assumed empty initially)
 // sex: 0 or 1 for male or female meiosis, respectively
 // randomGen: random number generator

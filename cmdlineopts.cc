@@ -62,7 +62,9 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
     {"miss_rate", required_argument, NULL, MISS_RATE},
     {"pseudo_hap", required_argument, NULL, PSEUDO_HAP_RATE},
+#ifndef NOFIXEDCO
     {"fixed_co", required_argument, NULL, FIXED_CO},
+#endif // NOFIXEDCO
     {0, 0, 0, 0}
   };
 
@@ -223,14 +225,22 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   if (!poisson && !interfereFile && !fixedCOfile) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
+#ifndef NOFIXEDCO
     fprintf(stderr, "ERROR: must specify crossover model, --pois or --intf, or use --fixedCOfile\n");
+#else
+    fprintf(stderr, "ERROR: must specify crossover model, --pois or --intf\n");
+#endif // NOFIXEDCO
     haveGoodArgs = false;
   }
   else if ((poisson && interfereFile) || (poisson && fixedCOfile) ||
 	   (interfereFile && fixedCOfile)) {
     if (haveGoodArgs)
       fprintf(stderr, "\n");
+#ifndef NOFIXEDCO
     fprintf(stderr, "ERROR: can only use one crossover model, --pois or --intf, or --fixedCOfile\n");
+#else
+    fprintf(stderr, "ERROR: can only use one crossover model, --pois or --intf\n");
+#endif // NOFIXEDCO
     haveGoodArgs = false;
   }
 
@@ -266,8 +276,10 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --intf <filename>\tshape, escape values for interference model RECOMMENDED\n");
   fprintf(out, " OR:\n");
   fprintf(out, "  --pois\t\tPoisson crossover model (no interference)\n");
+#ifndef NOFIXEDCO
   fprintf(out, " OR:\n");
   fprintf(out, "  --fixed_co <filename>\tfixed crossovers to use for simulating\n");
+#endif // NOFIXEDCO
   fprintf(out, "\n\n");
   fprintf(out, "OPTIONS:\n");
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");

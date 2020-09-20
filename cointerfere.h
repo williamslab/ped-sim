@@ -2,6 +2,9 @@
 //
 // This program is distributed under the terms of the GNU General Public License
 
+#include <random>
+#include "geneticmap.h"
+
 #ifndef COINTERFERE_H
 #define COINTERFERE_H
 
@@ -18,6 +21,8 @@ class COInterfere {
       initStartProb();
     }
 
+    static void read(vector<COInterfere> &coIntf, char *interfereFile,
+		     GeneticMap &map, bool &sexSpecificMaps);
     void simStahl(vector<double> &locations, int sex, mt19937 &randomGen);
 
   private:
