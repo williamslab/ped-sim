@@ -8,12 +8,15 @@
 #include <math.h>
 #include <random>
 #include <algorithm>
-#include <boost/math/special_functions/gamma.hpp>
 #include "cointerfere.h"
 
 // Note: we don't use GSL version of gamma cdf to reduce library dependencies,
 // but it is almost 2x faster than boost
-//#include <gsl/gsl_sf_gamma.h>
+#ifndef USEGSL
+#include <boost/math/special_functions/gamma.hpp>
+#else // USEGSL:
+#include <gsl/gsl_sf_gamma.h>
+#endif // USEGSL
 
 uniform_real_distribution<double> unif_prob(0.0, 1.0);
 extern uniform_int_distribution<int> coinFlip;
@@ -32,16 +35,21 @@ void COInterfere::initStartProb() {
 
     // Using R library:
 //    startProb[s][0] = 2.0 * (1.0 - p[s]) * pgamma(0.5*step, nu[s], 1/rate, 0, 0) * step;
-    // Using Boost (and GSL commented out):
     startProb[s][0] = 2.0 * (1.0 - p[s]) *
+#ifndef USEGSL
 		  boost::math::gamma_q(/*shape=*/nu[s], 0.5*step * rate) * step;
-//		  gsl_sf_gamma_inc_Q(/*shape=*/nu[s], 0.5*step * rate) * step;
+#else // USEGSL:
+		  gsl_sf_gamma_inc_Q(/*shape=*/nu[s], 0.5*step * rate) * step;
+#endif // USEGSL
     for(int i = 1; i < N_BINS4START; i++) {
       startProb[s][i] = startProb[s][i-1] +
 //	2.0*(1.0 - p[s]) * pgamma((i + 0.5)*step, nu[s], 1/rate, 0, 0) * step;
 	2.0*(1.0 - p[s]) *
+#ifndef USEGSL
 	    boost::math::gamma_q(/*shape=*/nu[s], (i + 0.5)*step * rate) * step;
-//	    gsl_sf_gamma_inc_Q(/*shape=*/nu[s], (i+0.5)*step * rate) * step;
+#else // USEGSL:
+	    gsl_sf_gamma_inc_Q(/*shape=*/nu[s], (i+0.5)*step * rate) * step;
+#endif // USEGSL
     }
   }
 }
