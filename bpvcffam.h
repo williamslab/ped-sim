@@ -26,7 +26,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
 	     GeneticMap &map, FILE *outs[2]);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
-	      char *famFile);
+	      const char *famFile);
 template<typename T>
 void pop_front(vector<T> &vec);
 

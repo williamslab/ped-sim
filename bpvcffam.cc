@@ -619,7 +619,7 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 // print fam format file with the pedigree structure of all individuals included
 // in the simulation
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
-	      char *famFile) {
+	      const char *famFile) {
   // open output fam file:
   FILE *out = fopen(famFile, "w");
   if (!out) {
