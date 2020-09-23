@@ -5,6 +5,7 @@
 // This code was ported from the xoi R package written by Karl Broman and
 // implemented in C (https://github.com/kbroman/xoi)
 
+#include <string.h>
 #include <math.h>
 #include <random>
 #include <algorithm>
