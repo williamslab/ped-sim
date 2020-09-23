@@ -519,3 +519,22 @@ int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch) {
   else // one spouse by default
     return 1;
 }
+
+void deleteTheSamples(vector<SimDetails> &simDetails, Person *****theSamples) {
+  for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
+    int numFam = simDetails[ped].numFam;
+    int numGen = simDetails[ped].numGen;
+    int *numBranches = simDetails[ped].numBranches;
+    for (int fam = 0; fam < numFam; fam++) {
+      for(int curGen = 0; curGen < numGen; curGen++) {
+	for(int branch = 0; branch < numBranches[curGen]; branch++) {
+	  delete [] theSamples[ped][fam][curGen][branch];
+	}
+	delete [] theSamples[ped][fam][curGen];
+      }
+      delete [] theSamples[ped][fam];
+    }
+    delete [] theSamples[ped];
+  }
+  delete [] theSamples;
+}

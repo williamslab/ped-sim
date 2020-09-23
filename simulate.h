@@ -35,6 +35,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
 	      int ped, int fam, int curGen, int branch, int ind);
 int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
+void deleteTheSamples(vector<SimDetails> &simDetails, Person *****theSamples);
 
 
 #endif // SIMULATE_H
