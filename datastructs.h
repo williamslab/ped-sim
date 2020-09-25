@@ -48,6 +48,9 @@ struct SimDetails {
     }
     strcpy(name, theName);
   }
+  ~SimDetails() {
+    delete [] name;
+  }
   int numFam;
   int numGen;
   int **numSampsToPrint;
