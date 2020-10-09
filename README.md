@@ -34,6 +34,7 @@ Table of Contents
          * [Retaining extra input samples](#retaining-extra-input-samples---retain_extra-)
    * [Extraneous tools](#extraneous-tools)
       * [Plotting pedigree structures: plot-fam.R](#plotting-pedigree-structures-plot-famr)
+      * [Converting fam to def file: fam2def.py](#converting-fam-to-def-file-fam2defpy)
 
 ------------------------------------------------------
 
@@ -751,3 +752,19 @@ script to check your structures.
 This is caused by having the 'affected' status be the same for all samples. A
 workaround is to edit the fam file and set the affected (column 6) status for
 at least one individual to something different, e.g., -9.
+
+Converting fam to def file: `fam2def.py`
+----------------------------------------
+
+With thanks to [Sara Mathieson](https://smathieson.sites.haverford.edu/),
+conversion from PLINK fam format to Ped-sim's def format is possible with
+`fam2def.py`. Simply run
+
+    ./fam2def.py -i [filename.fam] -o [out.def]
+
+to convert `[filename.fam]` to `[out.def]`.
+
+**Please note:** at present it is not possible to specify the sexes of
+individuals in the pedigrees Ped-sim produces. This may change in the future,
+and, if so, `fam2def.py` may be extended to incorporate sexes in the def
+files it produces.
