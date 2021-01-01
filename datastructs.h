@@ -48,6 +48,22 @@ struct SimDetails {
     }
     strcpy(name, theName);
   }
+  SimDetails(const SimDetails &other) {
+    numFam = other.numFam;
+    numGen = other.numGen;
+    numSampsToPrint = other.numSampsToPrint;
+    numBranches = other.numBranches;
+    branchParents = other.branchParents;
+    sexConstraints = other.sexConstraints;
+    i1Sex = other.i1Sex;
+    branchNumSpouses = other.branchNumSpouses;
+    name = new char[ strlen(other.name) + 1 ];
+    if (name == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
+    strcpy(name, other.name);
+  }
   ~SimDetails() {
     delete [] name;
   }
