@@ -30,6 +30,7 @@ GeneticMap::GeneticMap(char *mapFile, bool &sexSpecificMaps) {
   }
 
   char *curChr = NULL, *endptr;
+  int prevPhysPos = -1;
   vector<PhysGeneticPos> *curMap = NULL;
   sexSpecificMaps = false; // will be updated on first pass below
 
@@ -63,6 +64,7 @@ GeneticMap::GeneticMap(char *mapFile, bool &sexSpecificMaps) {
 	exit(5);
       }
       map.emplace_back(curChr, curMap);
+      prevPhysPos = -1;
     }
 
     int physPos;
@@ -73,6 +75,10 @@ GeneticMap::GeneticMap(char *mapFile, bool &sexSpecificMaps) {
       fprintf(stderr, "ERROR: could not parse column 2 of map file as integer\n");
       if (errno != 0)
 	perror("strtol");
+      exit(2);
+    }
+    if (physPos <= prevPhysPos) {
+      fprintf(stderr, "ERROR: column 2 of map file is not sorted\n");
       exit(2);
     }
     mapPos1 = strtod(mapPos1Str, &endptr);
@@ -97,6 +103,7 @@ GeneticMap::GeneticMap(char *mapFile, bool &sexSpecificMaps) {
     }
 
     curMap->emplace_back(physPos, mapPos1, mapPos2);
+    prevPhysPos = physPos;
   }
 
   free(buffer);
