@@ -512,23 +512,31 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 			(map.chromPhysPos(seg.chrIdx, right) -
 					    map.chromPhysPos(seg.chrIdx, left));
 	// start from the left position
-	if (sexSpecificMaps)
+	if (map.isX(seg.chrIdx)) {
+	  // only female map
+	  ibdGenet[pos] = map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, left);
+	  ibdGenet[pos] += interpFrac * // add (see next)
+	    (map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, right) - ibdGenet[pos]);
+	}
+	else if (sexSpecificMaps) {
+	  // sex averaged
 	  ibdGenet[pos] =
 		  (map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, left) +
 		   map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, left)) / 2;
-	else
-	  ibdGenet[pos] = map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, left);
-
-	// and add the factor for the distance between <left> and <right> that
-	// the position is:
-	if (sexSpecificMaps)
+	  // and add the factor for the distance between <left> and <right> that
+	  // the position is:
 	  ibdGenet[pos] += interpFrac *
 	    ((map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, right) +
 		   map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, right)) / 2 -
 	     ibdGenet[pos]);
-	else
-	  ibdGenet[pos] += interpFrac *
+	}
+	else {
+	  // only one map
+	  ibdGenet[pos] = map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, left);
+	  ibdGenet[pos] += interpFrac * // add (see previous)
 	    (map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, right) - ibdGenet[pos]);
+	}
+
 	break;
       }
       int mid = (left + right) / 2;
@@ -539,7 +547,9 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 	left = mid;
       else {
 	// equal: have exact position in map:
-	if (sexSpecificMaps)
+	if (map.isX(seg.chrIdx))
+	  ibdGenet[pos] = map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, mid);
+	else if (sexSpecificMaps)
 	  ibdGenet[pos] =
 	    (map.chromGenetPos(seg.chrIdx, /*sex=*/ 0, mid) +
 	     map.chromGenetPos(seg.chrIdx, /*sex=*/ 1, mid)) / 2;

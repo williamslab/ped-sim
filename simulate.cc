@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include <errno.h>
 #include <assert.h>
 #include "simulate.h"
 #include "cmdlineopts.h"
@@ -174,6 +173,11 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    if (curGen != numGen - 1) { // no founders in the last generation
 	      for(int ind = 0; ind < numFounders; ind++) {
 		for(int h = 0; h < 2; h++) { // 2 founder haplotypes per founder
+		  if (map.isX(chrIdx) && h == 0 &&
+		      theSamples[ped][fam][curGen][branch][ind].sex == 0)
+		    // only one haplotype (maternal) for males on X
+		    continue;
+
 		  int foundHapNum;
 		  if (chrIdx == 0) {
 		    foundHapNum = totalFounderHaps++;
@@ -264,9 +268,15 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		else
 		  hapIdx = p;
 
+		Person &thePerson = curFamSamps[curGen][branch][ind];
+
+		if (map.isX(chrIdx) && thePerson.sex == 0 && hapIdx == 0)
+		  // only one haplotype for males on X: the one from Mom
+		  // skip dad
+		  continue;
+
 		// Make space for this haplotype in the current sample:
 		curFamSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
-		Person &thePerson = curFamSamps[curGen][branch][ind];
 #ifndef NOFIXEDCO
 		if (p == 0 && chrIdx == 0 && curFixedCOidx >= 0) {
 		  // assign fixed COs for <thePerson>:
@@ -350,6 +360,11 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   // Pick haplotype for the beginning of the transmitted one:
   int curHap = coinFlip(randomGen);
 
+  if (map.isX(chrIdx) && parent.sex == 0)
+    // only one haplotype on X (the maternal) if the parent is male
+    curHap = 1;
+
+
   double firstcMPos = map.chromStartGenet(chrIdx, parent.sex);
   double lastcMPos = map.chromEndGenet(chrIdx, parent.sex);
   // Get the genetic length of this chromosome (for the appropriate sex).
@@ -366,10 +381,11 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 #ifndef NOFIXEDCO
   if (fixedCOidxs[0] == UINT_MAX) { // no fixed crossovers -- simulate:
 #endif // NOFIXEDCO
-    if (CmdLineOpts::interfereFile) {
+    if (chrLength > 0.0 && // any genetic length? (is 0 on chrX for males)
+	CmdLineOpts::interfereFile) {
       coIntf[chrIdx].simStahl(coLocations, parent.sex, randomGen);
     }
-    else {
+    else if (chrLength > 0.0) { // any genetic length? (is 0 on chrX for males)
       double lastPos = 0.0; // position of last crossover
       while (true) { // simulate until crossover is past chromosome end
 	double curPos = lastPos + crossoverDist(randomGen);
