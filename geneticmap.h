@@ -2,6 +2,8 @@
 //
 // This program is distributed under the terms of the GNU General Public License
 
+#include "cmdlineopts.h"
+
 #ifndef GENETICMAP_H
 #define GENETICMAP_H
 
@@ -23,6 +25,12 @@ class GeneticMap {
 
     size_t size() { return map.size(); }
     const char * chromName(int chrIdx) { return map[chrIdx].first; }
+    bool isX(int chrIdx) {
+      if (strcmp( chromName(chrIdx), CmdLineOpts::chrX ) == 0)
+	return true;
+      else
+	return false;
+    }
     size_t chromNumPos(int chrIdx) { return map[chrIdx].second->size(); }
 
     int chromStartPhys(int chrIdx) {

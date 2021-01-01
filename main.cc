@@ -4,7 +4,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <vector>
 #include <random>
@@ -66,6 +65,8 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "  Input VCF:\t\t%s\n",
 	    CmdLineOpts::inVCFfile == NULL ? "[none: no genetic data]" :
 					     CmdLineOpts::inVCFfile);
+    if (strcmp(CmdLineOpts::chrX, "X") != 0)
+      fprintf(outs[o], "  X chromosome:\t\t%s\n\n", CmdLineOpts::chrX);
     fprintf(outs[o], "  Output prefix:\t%s\n\n", CmdLineOpts::outPrefix);
 
     fprintf(outs[o], "  Random seed:\t\t%u\n\n", CmdLineOpts::randSeed);

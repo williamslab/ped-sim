@@ -78,6 +78,9 @@ class CmdLineOpts {
     // Fixed COs input file
     static char *fixedCOfile;
 
+    // Name of the X chromosome
+    static char *chrX;
+
 };
 
 #endif // CMDOPTIONS_H

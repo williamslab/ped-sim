@@ -29,6 +29,7 @@ int    CmdLineOpts::keepPhase = 0;
 int    CmdLineOpts::retainExtra = 0;
 int    CmdLineOpts::printFounderIds = 0;
 char  *CmdLineOpts::fixedCOfile = NULL;
+char  *CmdLineOpts::chrX = NULL;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
@@ -75,7 +76,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
   bool haveGoodArgs = true;
   bool setMissRate = false;
 
-  char optstring[80] = "d:m:i:o:";
+  char optstring[80] = "d:m:i:o:X:";
   while ((c = getopt_long(argc, argv, optstring, longopts, &optionIndex))
 									!= -1) {
     errno = 0;    // initially: may get errors from strtol
@@ -114,6 +115,9 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	break;
       case 'o':
 	outPrefix = optarg;
+	break;
+      case 'X':
+	chrX = optarg;
 	break;
       case RAND_SEED:
 	autoSeed = false;
@@ -251,6 +255,12 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     haveGoodArgs = false;
   }
 
+  if (chrX == NULL && haveGoodArgs) {
+    chrX = new char[2];
+    chrX[0] = 'X';
+    chrX[1] = '\0';
+  }
+
   if (!haveGoodArgs) {
     printUsage(stderr, argv[0]);
   }
@@ -285,6 +295,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  -i <filename>\t\tinput VCF containing phased samples to use as founders\n");
   fprintf(out, "\t\t\t  can be gzipped (with .gz extension) or not\n");
   fprintf(out, "\t\t\t  required for genetic data output\n");
+  fprintf(out, "  -X <string>\t\tassign the label of the X chromosome (default: X)\n");
   fprintf(out, "\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
