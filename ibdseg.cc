@@ -249,7 +249,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
     printIBD(out, simDetails[curPed], curFam, theSegs, map, sexSpecificMaps,
 	     onlyGenetLen);
 
-  fclose(out);
+  if (out != stdout)
+    fclose(out);
 
   delete [] theSegs;
 }
