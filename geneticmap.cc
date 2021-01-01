@@ -67,6 +67,7 @@ GeneticMap::GeneticMap(char *mapFile, bool &sexSpecificMaps) {
 
     int physPos;
     double mapPos1, mapPos2 = 0.0;
+    errno = 0; // initially
     physPos = strtol(physPosStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
       fprintf(stderr, "ERROR: could not parse column 2 of map file as integer\n");

@@ -102,6 +102,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
 	exit(5);
       }
+      errno = 0; // initially
       int curNumFam = strtol(numFamStr, &endptr, 10);
       if (errno != 0 || *endptr != '\0') {
 	fprintf(stderr, "ERROR: line %d in def: expected number of families to simulate as second token\n",
@@ -193,6 +194,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     char *numSampsStr = strtok_r(NULL, delim, &saveptr);
     char *branchStr = strtok_r(NULL, delim, &saveptr);
 
+    errno = 0; // initially
     int generation = strtol(genNumStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
       fprintf(stderr, "ERROR: line %d in def: expected generation number or \"def\" as first token\n",
@@ -711,6 +713,8 @@ void readParents(int *numBranches, int prevGen, int **sexConstraints,
 		 char *&fullAssignPar, const int i1Sex, char *&endptr,
 		 int line) {
   int i;
+
+  errno = 0; // initially
 
   // Find the second parent if present
   for(i = 0; assignPar[0][i] != '_' && assignPar[0][i] != '\0'; i++);

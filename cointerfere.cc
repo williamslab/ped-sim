@@ -105,6 +105,7 @@ void COInterfere::read(vector<COInterfere> &coIntf, char *interfereFile,
       nuStr[i] = strtok_r(NULL, delim, &saveptr);
       pStr[i] = strtok_r(NULL, delim, &saveptr);
 
+      errno = 0; // initially
       nu[i] = strtod(nuStr[i], &endptr);
       if (errno != 0 || *endptr != '\0') {
 	fprintf(stderr, "ERROR: chrom %s, could not parse %s interference nu parameter\n",

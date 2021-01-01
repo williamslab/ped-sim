@@ -74,6 +74,7 @@ void FixedCOs::read(const char *fixedCOfile, GeneticMap &map) {
 
     // get position
     posStr = strtok_r(NULL, delim, &saveptr);
+    errno = 0; // initially
     int pos = strtol(posStr, &endptr, 10);
     if (errno != 0 || *endptr != '\0') {
       fprintf(stderr, "ERROR: column three of %s contains %s, which cannot be converted to an integer\n",
