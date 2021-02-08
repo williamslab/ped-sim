@@ -192,11 +192,12 @@ int main(int argc, char **argv) {
     // note: printVCF()'s callee makeVCF() print the status for generating the
     // VCF file
 
-    printVCF(simDetails, theSamples, totalFounderHaps, CmdLineOpts::inVCFfile,
-	     outFile, map, outs);
+    int ret = printVCF(simDetails, theSamples, totalFounderHaps,
+		       CmdLineOpts::inVCFfile, outFile, map, outs);
 
-    for(int o = 0; o < 2; o++)
-      fprintf(outs[o], "done.\n");
+    if (ret == 0)
+      for(int o = 0; o < 2; o++)
+	fprintf(outs[o], "done.\n");
   }
   else {
     for(int o = 0; o < 2; o++)

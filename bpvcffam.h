@@ -18,13 +18,13 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 		   FileOrGZ<IO_TYPE> *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      GeneticMap &map, char *bpFile);
-void printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	      int totalFounderHaps, const char *inVCFfile, char *outFile,
 	      GeneticMap &map, FILE *outs[2]);
 template<typename IO_TYPE>
-void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
-	     GeneticMap &map, FILE *outs[2]);
+int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
+	    GeneticMap &map, FILE *outs[2]);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      const char *famFile);
 template<typename T>

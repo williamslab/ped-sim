@@ -111,22 +111,22 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 
 // Given an input VCF filename, determines whether the output should be gzipped
 // or not and calls makeVCF()
-void printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	      int totalFounderHaps, const char *inVCFfile, char *outFile,
 	      GeneticMap &map, FILE *outs[2]) {
   // decide whether to use gz I/O or standard, and call makeVCF() accordingly
   int inVCFlen = strlen(inVCFfile);
   if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
     sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
-    makeVCF<gzFile>(simDetails, theSamples, totalFounderHaps,
-		    CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
-		    outs);
+    return makeVCF<gzFile>(simDetails, theSamples, totalFounderHaps,
+			   CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
+			   outs);
   }
   else {
     sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
-    makeVCF<FILE *>(simDetails, theSamples, totalFounderHaps,
-		    CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
-		    outs);
+    return makeVCF<FILE *>(simDetails, theSamples, totalFounderHaps,
+			   CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
+			   outs);
   }
 }
 
@@ -135,9 +135,9 @@ void printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
 template<typename IO_TYPE>
-void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
-	     GeneticMap &map, FILE *outs[2]) {
+int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
+	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
+	    GeneticMap &map, FILE *outs[2]) {
   // open input VCF file:
   FileOrGZ<IO_TYPE> in;
   bool success = in.open(inVCFfile, "r");
@@ -456,6 +456,18 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int tokenIndex = 0; tokenIndex < gtField; tokenIndex++)
 	theGT = strtok_r(NULL, ":", &saveptrGT);
 
+      for(int c = 0; theGT[c] != '\0'; c++) {
+	if (theGT[c] == '/') {
+	  fprintf(stderr, "\n\nERROR: detected unphased genotype; input VCF must be phased.\n");
+	  fprintf(stderr, "       Prematurely truncating output VCF.\n");
+	  fprintf(stderr, "       See variant on chromosome/contig %s, position %d\n",
+		  chrom, pos);
+	  out.close();
+	  in.close();
+	  return 1;
+	}
+      }
+
       // Now break apart the genotype into the alleles of the two haplotypes
       char *alleles[2];
       char *saveptrAlleles;
@@ -614,6 +626,8 @@ void makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
   out.close();
   in.close();
+
+  return 0;
 }
 
 // print fam format file with the pedigree structure of all individuals included
