@@ -374,7 +374,9 @@ columns if using male and female maps. The format of this file is:
 
 The chromosomes are expected to be listed in the same order as they are in
 any input VCF file, with the physical positions in increasing order. The
-chromosome names must also match the names in the input VCF file.
+chromosome names must also match the names in the input VCF file, and 
+_all_ chromosome names present in the map must also have corresponding
+records in the VCF.
 
 `[map_position0]` is genetic position in centiMorgans, and should either be the
 sex-averaged genetic position if using only one map, or should be the male
@@ -386,7 +388,7 @@ female parents.
 correspond to the female genetic position if given.
 
 A high resolution human sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
-and is described in [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
+and is described in [BhÃ©rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
 To generate a map file in the format the simulator requires with both male and
 female genetic positions, run the following bash commands:
 
@@ -601,7 +603,7 @@ Citing Ped-sim and related papers
 
 If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007979);
 if you use the Refined genetic map (named `refined_mf.simmap` in the example
-code), please cite [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
+code), please cite [BhÃ©rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
 and if you use the `interfere/nu_p_campbell.tsv` interference parameters, please
 cite [Campbell et al. (2015)](https://www.nature.com/articles/ncomms7260).
 
