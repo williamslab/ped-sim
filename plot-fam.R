@@ -39,6 +39,10 @@ for(i in 1:length(fam_id)){
 
   pdf(file =paste(args[1], "-", fam_id[i], ".pdf", sep=""), width = 20, height = 8, onefile = TRUE, paper = "special")
   par(xpd=TRUE)
-  print(plot.pedigree(ped,id=dat[sel,2],))
+  # extra margin on left, right and a bit on top so that the sample names fit
+  # change cex larger to make the circles/squares and labels larger relative to
+  # the lines connecting samples: (may want to increase the margin values
+  # in proportion
+  print(plot.pedigree(ped,id=dat[sel,2], mar=c(0,4,1,4), cex=1))
   dev.off()
 }
