@@ -101,7 +101,10 @@ Def file
 
 The def file defines the pedigree structure(s) to be simulated. Comments are
 allowed on a line by themselves beginning with #. Example def files are in the
-`example/` directory, and descriptions of the example files are below.
+`example/` directory, and
+[descriptions of the example files are below](#example-def-file-examplecousins-1st_half_to_3rddef).
+**The specification below is perhaps best for more advanced users. The
+examples are a good place to start.**
 
 The first line of a pedigree definition contains four (or five) columns:
 
@@ -251,6 +254,110 @@ sexes necessary to have offspring. For example, `1:1_3 2:1_4 3:3_4` is
 impossible since the reproducing individuals in branches 3 and 4 must be the
 same sex in order to both have children with the individual in branch 1.
 
+### Example def file: `example/cousins-1st_half_to_3rd.def`
+
+The first def entry in `example/cousins-1st_half_to_3rd.def` is
+
+    def full-1cousin 10 3
+    3 1
+
+The first line names the pedigree `full-1cousin`, and calls for 10 replicate
+pedigrees to be generated. The last column, 3, says that the `full-1cousin`
+pedigree spans three generations.
+
+This definition does not mention generations 1 and 2 (the line that reads
+`3 1` refers to generation 3), so those generations have the default number of
+branches and do not have data printed for the individuals in them. By default,
+generation 1 has one branch that contains one random individual (the `i1`
+individual) and all spouses of this person. (For this pedigree, the generation
+1 branch contains only one couple.)
+
+Generation 2 has the default two branches, with the `i1` individuals in these
+branches being the children of the branch in generation 1 (strictly speaking,
+of the couple in that branch). This means that the `i1` individuals in these
+branches are full siblings of each other.
+
+The def line `3 1` says that in generation 3, 1 sample per branch should be
+printed, and it does not specify the number of branches in this generation.
+This means that generation 3 also has the default branch count, which is
+assigned to be the same as the previous generation, or two branches. These
+branches contain the children of the `i1` individuals in the corresponding
+branches in the last generation, so generation 2, branch 1's child is in
+generation 3, branch 1, and generation 2, branch 2's child is in generation 3,
+branch 2.
+
+This completes the definition of the pedigree, which will print a pair of
+first cousins.
+
+The next two definitions are for second and third cousins:
+
+    def full-2cousin 10 4
+    4 1
+    
+    def full-3cousin 10 5
+    5 1
+
+These pedigrees differ from the first cousin pedigree in their names and
+numbers of generations: 4 and 5 for second and third cousins, respectively.
+Like the first cousin pedigree, they use the default branch counts for all
+generations. This means that generation 1 contains one branch, and all other
+generations have two branches. When successive generations have the same number
+of branches, branch _i_ in one generation contains the parents of branch _i_ in
+the next generation. (So branch 2's parents are in the previous generation's
+branch 2.)
+
+The `4 1` and `5 1` lines specify that one sample per branch should be printed
+in these generations, and lead to the production of the second and third
+cousins as needed.
+
+These two-line def entries are perhaps the simplest type and generate pairs of
+full cousins of any distance (determined by the number of generations).
+
+Ped-sim also generates half-cousins, and the def file contains two more entries
+for printing half-first and half-second cousins. These involve a few more
+instructions:
+
+    def half-1cousin 10 3
+    2 0 2   1:1  2:1
+    3 1
+
+This specifies a pedigree with the name `half-1cousin` with 10 replicate copies
+to be produced and 3 generations in the pedigree. As with the full first cousin
+case, generation 1 uses the default of one branch.
+
+The first part of the generation 2 definition reads `2 0 2`. The 0 indicates
+that no samples from generation 2 should be printed, and the third column says
+that this generation has 2 branches. These are in fact the default settings,
+but are explicitly listed ahead of the second, non-default part of this line.
+
+The latter half of the generation 2 definition reads `1:1  2:1`. Here, `1:1`
+says that the current generation's branch 1 `i1` individual is the child of the
+previous generation's (generation 1's) branch 1. Similarly, `2:1` says that the
+current generation's branch 2 `i1` individual is also a child of the previous
+generation's branch 1. So both branches in generation 2 are children of the
+same person, but because the specifications are separated, they are children of
+two spouses, so produce half-siblings. In contrast, if this line instead
+specified `1,2:1`, the branches would be full siblings.
+
+With the two branches in generation 2 containing half-siblings, the remainder
+of the definition is the same as for full cousins, with `3 1` indicating that
+in generation 3, 1 sample per branch should be printed. This line leaves the
+branch count as the default, meaning that it has two branches with the default
+parents from the previous generation.
+
+The half-second cousin definition is:
+
+    def half-2cousin 10 4
+    2 0 2   1:1  2:1
+    4 1
+
+This has the same behavior in generation 2 as in the `half-1cousin` definition,
+yielding two branches with half-siblings as `i1` individuals in them. It keeps
+default behavior for generation 3, with two branches that descend from
+generation 2. The `4 1` line again calls the printing of 1 person per branch
+(with a default of two branches) in generation 4. The printed pair are
+half-second cousins, as desired.
+
 ### Example def file: `example/second_deg.def`
 
 The first entry in the `example/second_deg.def` file simulates 10 pedigrees
@@ -388,7 +495,7 @@ female parents.
 correspond to the female genetic position if given.
 
 A high resolution human sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
-and is described in [BhÃ©rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
+and is described in [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
 To generate a map file in the format the simulator requires with both male and
 female genetic positions, run the following bash commands:
 
@@ -603,7 +710,7 @@ Citing Ped-sim and related papers
 
 If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007979);
 if you use the Refined genetic map (named `refined_mf.simmap` in the example
-code), please cite [BhÃ©rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
+code), please cite [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
 and if you use the `interfere/nu_p_campbell.tsv` interference parameters, please
 cite [Campbell et al. (2015)](https://www.nature.com/articles/ncomms7260).
 
