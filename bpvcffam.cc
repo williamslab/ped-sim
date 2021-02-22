@@ -117,16 +117,24 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   // decide whether to use gz I/O or standard, and call makeVCF() accordingly
   int inVCFlen = strlen(inVCFfile);
   if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
-    sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
-    return makeVCF<gzFile>(simDetails, theSamples, totalFounderHaps,
-			   CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
-			   outs);
+    if (CmdLineOpts::nogz) {
+      sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
+      return makeVCF<gzFile, FILE *>(simDetails, theSamples, totalFounderHaps,
+				     CmdLineOpts::inVCFfile,
+				     /*outVCFfile=*/ outFile, map, outs);
+    }
+    else {
+      sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
+      return makeVCF<gzFile, gzFile>(simDetails, theSamples, totalFounderHaps,
+				     CmdLineOpts::inVCFfile,
+				     /*outVCFfile=*/ outFile, map, outs);
+    }
   }
   else {
     sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
-    return makeVCF<FILE *>(simDetails, theSamples, totalFounderHaps,
-			   CmdLineOpts::inVCFfile, /*outVCFfile=*/ outFile, map,
-			   outs);
+    return makeVCF<FILE *, FILE *>(simDetails, theSamples, totalFounderHaps,
+				   CmdLineOpts::inVCFfile,
+				   /*outVCFfile=*/ outFile, map, outs);
   }
 }
 
@@ -134,12 +142,12 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 // stored in <theSamples> and other necessary information, reads input VCF
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
-template<typename IO_TYPE>
+template<typename I_TYPE, typename O_TYPE>
 int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
 	    GeneticMap &map, FILE *outs[2]) {
   // open input VCF file:
-  FileOrGZ<IO_TYPE> in;
+  FileOrGZ<I_TYPE> in;
   bool success = in.open(inVCFfile, "r");
   if (!success) {
     printf("\nERROR: could not open input VCF file %s!\n", inVCFfile);
@@ -148,7 +156,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 
   // open output VCF file:
-  FileOrGZ<IO_TYPE> out;
+  FileOrGZ<O_TYPE> out;
   success = out.open(outFileBuf, "w");
   if (!success) {
     printf("\nERROR: could not open output VCF file %s!\n", outFileBuf);

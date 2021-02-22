@@ -12,16 +12,16 @@
 
 using namespace std;
 
-template<typename IO_TYPE = FILE *>
+template<typename O_TYPE = FILE *>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 		   int branch, int ind, bool printAllGens = false,
-		   FileOrGZ<IO_TYPE> *gzOut = NULL);
+		   FileOrGZ<O_TYPE> *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      GeneticMap &map, char *bpFile);
 int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	      int totalFounderHaps, const char *inVCFfile, char *outFile,
 	      GeneticMap &map, FILE *outs[2]);
-template<typename IO_TYPE>
+template<typename I_TYPE, typename O_TYPE>
 int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
 	    GeneticMap &map, FILE *outs[2]);
