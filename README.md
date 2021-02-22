@@ -266,7 +266,12 @@ pedigrees to be generated. The last column, 3, says that the `full-1cousin`
 pedigree spans three generations.
 
 The following is a plot of the `full-1cousin` pedigree, with generations
-labeled and outlined in red, and branches also labeled and outlined in blue:
+labeled and outlined in red, branches labeled and outlined in blue, and `i1`
+individuals circled in purple (in generations 1 and 2). Only the individuals in
+generation 3 are printed, and these individuals' shapes are filled in black;
+non-printed individuals are unfilled. The sexes of these individuals are
+random. (Use the [plot-fam.R](#plotting-pedigree-structures-plot-famr) script
+to generate black and white portions of this plot for your def file.)
 
 ![Pedigree plot of full-1cousin](example/full-1cousin1.png?raw=true "Pedigree plot of full-1cousin")
 
@@ -844,7 +849,8 @@ R package and works by running
 
 This plots all pedigree structures given in the `[base name].fam` file. The
 output files are named `[base name]-[family id].pdf`, with a file for each
-family id (first column) in the fam file.
+family id (first column) in the fam file. (Use the `--fam` Ped-sim option
+to get a `.fam` file.)
 
 **Be mindful of the number of files this will produce:** it generates a pdf for
 each *copy* of all the family structures in the file. It may be helpful to run
