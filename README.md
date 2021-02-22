@@ -265,6 +265,11 @@ The first line names the pedigree `full-1cousin`, and calls for 10 replicate
 pedigrees to be generated. The last column, 3, says that the `full-1cousin`
 pedigree spans three generations.
 
+The following is a plot of the `full-1cousin` pedigree, with generations
+labeled and outlined in red, and branches also labeled and outlined in blue:
+
+![Pedigree plot of full-1cousin](example/full-1cousin1.png?raw=true "Pedigree plot of full-1cousin")
+
 This definition does not mention generations 1 and 2 (the line that reads
 `3 1` refers to generation 3), so those generations have the default number of
 branches and do not have data printed for the individuals in them. By default,
@@ -459,11 +464,6 @@ ultimate descendants in generation 4 are a mix of (full) first cousins and
 half-second cousins.
 
 ### Other example def files
-
-The `example/cousins-1st_half_to_3rd.def` def file includes five types of
-pedigrees producing first cousins, half-first cousins, second cousins,
-half-second cousins, and third cousins. The comments in the file include some
-documentation of these pedigree specifications.
 
 The `example/once-removed.def` def file includes three pedigrees that make use
 of the `no-print` branch specification in order to print relative pairs from
