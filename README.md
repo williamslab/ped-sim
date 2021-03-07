@@ -601,6 +601,9 @@ request to print one or more samples, the simulator prints any spouses in that
 generation as well as the primary branch individuals. See below for a
 description of the sample ids of the simulated individuals.
 
+By default, the output VCF file is gzipped (Note: *not* bgzip'd) if the input
+is gzipped. To make the output non-gzipped, use `--nogz`.
+
 ------------------------------------------------------
 
 Output log file
