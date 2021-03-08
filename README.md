@@ -20,6 +20,7 @@ Table of Contents
       * [Sample ids for simulated individuals](#samp-ids)
       * [Output fam file](#output-fam-file)
       * [Output BP file](#output-bp-file)
+      * [Output MRCA file](#output-mrca-file)
       * [Extra notes: sex-specific maps](#extra-notes-sex-specific-maps)
       * [Citing Ped-sim](#citing-ped-sim-and-related-papers)
       * [Other optional arguments](#other-optional-arguments)
@@ -601,7 +602,7 @@ request to print one or more samples, the simulator prints any spouses in that
 generation as well as the primary branch individuals. See below for a
 description of the sample ids of the simulated individuals.
 
-By default, the output VCF file is gzipped (Note: *not* bgzip'd) if the input
+By default, the output VCF file is gzipped (Note: **not** bgzip'd) if the input
 is gzipped. To make the output non-gzipped, use `--nogz`.
 
 ------------------------------------------------------
@@ -699,6 +700,19 @@ inclusive. The next break point `8:45864504` designates that the individual
 inherited haplotype 8 from position 25,639,568 through 45,864,504. And the final
 break point of `6:51039778` says that the individual received haplotype 6 from
 position 45,864,505 through 51,039,778, the latter of which ends the chromosome.
+
+------------------------------------------------------
+
+Output MRCA file
+----------------
+
+With the `--mrca` option, Ped-sim prints a file with the id of the founder in
+which every IBD/HBD segment coalesces in. The file has the same line count as
+the IBD segment file, with entries in each file corresponding to each other.
+
+**Note:** this _may_ lead to more IBD segments being printed. When printing
+segments, Ped-sim merges adjacent segments, but with `--mrca` this merging
+only takes place if the adjacent segments descend from the same founder.
 
 ------------------------------------------------------
 

@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.1.17"
-#define RELEASE_DATE	"22 Feb 2021"
+#define VERSION_NUMBER	"1.1.18"
+#define RELEASE_DATE	" 8 Mar 2021"
 
 class CmdLineOpts {
   public:
@@ -51,6 +51,9 @@ class CmdLineOpts {
 
     // Print the bp file?
     static int printBP; 
+
+    // Print the MRCA of segments?
+    static int printMRCA;
 
     // Always output uncompressed VCFs?
     static int nogz;

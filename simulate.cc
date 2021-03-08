@@ -69,6 +69,8 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int i1Sex = simDetails[ped].i1Sex;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
+    simDetails[ped].founderOffset = totalFounderHaps;
+
     ////////////////////////////////////////////////////////////////////////////
     // Allocate space and make Person objects for all those we will simulate,
     // assigning sex if <sexSpecificMaps> is true
@@ -181,6 +183,29 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  int foundHapNum;
 		  if (chrIdx == 0) {
 		    foundHapNum = totalFounderHaps++;
+
+		    if (fam == 0 && CmdLineOpts::printMRCA) {
+		      // number of digits for the numbers is 1 + (value+1) / 10
+		      // 6 for 'g-b-i\0'
+		      if (h == 0) {
+			int branchNumSpouses =
+			  getBranchNumSpouses(simDetails[ped], curGen, branch);
+			int idLength = 6 + 1 + (curGen + 1) / 10 +
+					   1 + (branch + 1) / 10 +
+					   1 + (ind + 1) / 10;
+			char *idSuffix = new char[ idLength ];
+			if (ind < branchNumSpouses)
+			  sprintf(idSuffix, "g%d-b%d-s%d", curGen + 1,
+				  branch + 1, ind + 1);
+			else
+			  sprintf(idSuffix, "g%d-b%d-i%d", curGen + 1,
+				  branch + 1, ind - branchNumSpouses + 1);
+			// same founder for two ids in a row for the two
+			// haplotypes:
+			simDetails[ped].founderIdSuffix.push_back(idSuffix);
+			simDetails[ped].founderIdSuffix.push_back(idSuffix);
+		      }
+		    }
 
 		    hapCarriers.emplace_back();
 		    hapCarriers[ foundHapNum ].reserve( numChrs );
@@ -297,6 +322,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  } // <map> (chroms)
 	} // <branch>
       } // <curGen>
+
+      if (fam == 0)
+	simDetails[ped].numFounders = totalFounderHaps -
+						  simDetails[ped].founderOffset;
     } // <fam>
 
   } // <ped>

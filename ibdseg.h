@@ -17,16 +17,19 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b);
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
-		    bool onlyGenetLen);
+		    bool onlyGenetLen, char *mrcaFile);
 void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
-	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen);
-void mergeSegments(vector<IBDRecord> &segs);
+	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen,
+	      FILE *mrcaOut);
+void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap);
 void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, const char *type,
 			GeneticMap &map, bool sexSpecificMaps,
 			bool onlyGenetLen);
+void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
+		       int fam);
 void clearTheSegs(SimDetails &pedDetails, 
 		  vector< vector< vector<IBDRecord> > > *theSegs);
 

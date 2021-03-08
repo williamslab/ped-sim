@@ -164,12 +164,22 @@ int main(int argc, char **argv) {
   }
 
   for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "Printing IBD segments... ");
+    fprintf(outs[o], "Printing IBD segments");
+    if (CmdLineOpts::printMRCA)
+      fprintf(outs[o], " and MRCAs... ");
+    else
+      fprintf(outs[o], "... ");
     fflush(outs[o]);
   }
   sprintf(outFile, "%s.seg", CmdLineOpts::outPrefix);
+  char *mrcaFile = NULL;
+  if (CmdLineOpts::printMRCA) {
+    mrcaFile = new char[outFileLen];
+    sprintf(mrcaFile, "%s.mrca", CmdLineOpts::outPrefix);
+  }
   locatePrintIBD(simDetails, hapCarriers, map, sexSpecificMaps,
-		 /*ibdFile=*/ outFile, /*onlyGenetLen=*/ false);
+		 /*ibdFile=*/ outFile, /*onlyGenetLen=*/ false,
+		 mrcaFile);
   for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "done.\n");
   }

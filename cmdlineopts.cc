@@ -21,6 +21,7 @@ bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
 int    CmdLineOpts::printFam = 0;
 int    CmdLineOpts::printBP = 0;
+int    CmdLineOpts::printMRCA = 0;
 int    CmdLineOpts::nogz = 0;
 double CmdLineOpts::genoErrRate = 1e-3;
 double CmdLineOpts::homErrRate = 0;
@@ -57,6 +58,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"seed", required_argument, NULL, RAND_SEED},
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
+    {"mrca", no_argument, &CmdLineOpts::printMRCA, 1},
     {"nogz", no_argument, &CmdLineOpts::nogz, 1},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
     {"founder_ids", no_argument, &CmdLineOpts::printFounderIds, 1},
@@ -301,6 +303,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
+  fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
   fprintf(out, "  --nogz\t\talways print uncompressed VCF files\n");
   fprintf(out, "\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");

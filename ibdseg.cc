@@ -49,7 +49,7 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b) {
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
-		    bool onlyGenetLen) {
+		    bool onlyGenetLen, char *mrcaFile) {
   FILE *out;
   if (ibdFile != NULL) {
     out = fopen(ibdFile, "w");
@@ -61,6 +61,16 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   }
   else {
     out = stdout;
+  }
+
+  FILE *mrcaOut = NULL;
+  if (mrcaFile != NULL) {
+    mrcaOut = fopen(mrcaFile, "w");
+    if (!mrcaOut) {
+      printf("ERROR: could not open output file %s!\n", mrcaFile);
+      perror("open");
+      exit(1);
+    }
   }
 
   int maxNumGens = -1; // how many generations in the largest pedigree?
@@ -158,7 +168,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	  // print stored segments, locating any IBD2
 	  if (curPed >= 0)
 	    printIBD(out, simDetails[curPed], curFam, theSegs, map,
-		     sexSpecificMaps, onlyGenetLen);
+		     sexSpecificMaps, onlyGenetLen, mrcaOut);
 	  // update:
 	  curPed = it1->ped;
 	  curFam = it1->fam;
@@ -172,7 +182,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		 hbdIt++) {
 	  theSegs[ it1->gen ][ it1->branch ][ it1->ind ].
 	    emplace_back(it1->gen, it1->branch, it1->ind,
-			 chrIdx, hbdIt->first, hbdIt->second);
+			 chrIdx, hbdIt->first, hbdIt->second, foundHapNum);
 	}
 
 	// Iterate over InheritRecords after <it1> to search for overlap
@@ -212,7 +222,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
 	  theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
 	    emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			 chrIdx, startPos, endPos);
+			 chrIdx, startPos, endPos, foundHapNum);
 
 	  // if HBD in both <samp1> and <samp2> spans part of this region,
 	  // then there is IBD2 and we need more IBD segments
@@ -236,7 +246,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
 		theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
 		  emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			       chrIdx, thisStart, thisEnd);
+			       chrIdx, thisStart, thisEnd, foundHapNum);
 	      }
 	    } // HBD in samp2 loop
 	  } // HBD in samp1 loop
@@ -247,7 +257,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
   if (curPed >= 0)
     printIBD(out, simDetails[curPed], curFam, theSegs, map, sexSpecificMaps,
-	     onlyGenetLen);
+	     onlyGenetLen, mrcaOut);
 
   if (out != stdout)
     fclose(out);
@@ -260,7 +270,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 // the segment length
 void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
-	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen) {
+	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen,
+	      FILE *mrcaOut) {
   // Go through <theSegs> and print segments for samples that were listed as
   // printed in the def file
   for(int gen = 0; gen < pedDetails.numGen; gen++) {
@@ -284,7 +295,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	sort(segs.begin(), segs.end(), compIBDRecord);
 
 	// merge segments that are adjacent to each other
-	mergeSegments(segs);
+	mergeSegments(segs, /*retainFoundHap=*/ mrcaOut != NULL);
 	int numSegs = segs.size();
 
 	// Now print segments, identifying any IBD2 and printing it as such
@@ -325,6 +336,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   /*realEnd=*/ segs[i + nextI].startPos - 1,
 				   /*type=*/ "IBD1", map, sexSpecificMaps,
 				   onlyGenetLen);
+		if (mrcaOut)
+		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
+				    fam);
 	      }
 
 	      // now the IBD2 segment:
@@ -335,6 +349,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				 /*realEnd=*/ ibd2End,
 				 /*type=*/ "IBD2", map, sexSpecificMaps,
 				 onlyGenetLen);
+	      if (mrcaOut)
+		printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
+				  fam);
 
 	      // likely another segment just after the IBD2 end, but that region
 	      // must be checked against later <segs>. To ensure this is done
@@ -389,7 +406,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		continue; // don't to print IBD segment (branch not printed)
 
 	      if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
-		  ind == segs[i].otherInd)
+		  ind == segs[i].otherInd) {
 		// HBD
 		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
 				   segs[i],
@@ -397,7 +414,11 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   /*realEnd=standard=*/ segs[i].endPos,
 				   /*type=*/ "HBD", map, sexSpecificMaps,
 				   onlyGenetLen);
-	      else
+		if (mrcaOut)
+		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
+				    fam);
+	      }
+	      else {
 		// IBD1
 		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
 				   segs[i],
@@ -405,6 +426,10 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   /*realEnd=standard=*/ segs[i].endPos,
 				   /*type=*/ "IBD1", map, sexSpecificMaps,
 				   onlyGenetLen);
+		if (mrcaOut)
+		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
+				    fam);
+	      }
 	    }
 	  } // looping over <nextI> values
 
@@ -416,7 +441,9 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 }
 
 // Helper for printIBD(): merges adjacent IBD segments
-void mergeSegments(vector<IBDRecord> &segs) {
+// If <retainFoundHap> is true, segments are only merged if they have the same
+// foundHapNum
+void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
   int numSegs = segs.size();
 
   int numRemoved = 0; // how many segments removed?
@@ -460,11 +487,14 @@ void mergeSegments(vector<IBDRecord> &segs) {
 	// subsequent segments necessarily start at least as far away
 	// because of sorting: can't merge
 	break;
-      if (segs[i].endPos + 1 == segs[i + j].startPos) {
+      if (segs[i].endPos + 1 == segs[i + j].startPos &&
+	  // should merging respect founder haplotypes? if so, check:
+	  (!retainFoundHap ||
+			    segs[i].foundHapNum == segs[i + j].foundHapNum)) {
 	// merge!
 	segs[i].endPos = segs[i+j].endPos;
 	segs[i + j].otherGen = -1;
-	// continue searching for additional segments to merge wth <i>
+	// continue searching for additional segments to merge with <i>
       }
     }
   }
@@ -489,12 +519,15 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 			int realStart, int realEnd, const char *type,
 			GeneticMap &map, bool sexSpecificMaps,
 			bool onlyGenetLen) {
-  printSampleId(out, pedDetails, fam, gen, branch, ind);
-  fprintf(out, "\t");
-  printSampleId(out, pedDetails, fam, seg.otherGen, seg.otherBranch,
-		seg.otherInd);
+  if (!onlyGenetLen) { // TODO: rename parameter: eliminating sample id cols too
+    printSampleId(out, pedDetails, fam, gen, branch, ind);
+    fprintf(out, "\t");
+    printSampleId(out, pedDetails, fam, seg.otherGen, seg.otherBranch,
+		  seg.otherInd);
+    fprintf(out, "\t");
+  }
 
-  fprintf(out, "\t%s\t%d\t%d\t%s", map.chromName(seg.chrIdx),realStart, realEnd,
+  fprintf(out, "%s\t%d\t%d\t%s", map.chromName(seg.chrIdx), realStart, realEnd,
 	  type);
 
   // Find the genetic positions of the start and ends
@@ -565,6 +598,16 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
   else
     fprintf(out, "\t%lf\t%lf\t%lf\n", ibdGenet[0], ibdGenet[1],
 	    ibdGenet[1] - ibdGenet[0]);
+}
+
+// For printing the founder id that segments coalesce in to the .mrca
+// file
+void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
+		       int fam) {
+  int founderIdx = (foundHapNum - pedDetails.founderOffset) %
+							pedDetails.numFounders;
+  fprintf(mrcaOut, "%s%d_%s\n", pedDetails.name, fam+1,
+	  pedDetails.founderIdSuffix[founderIdx]);
 }
 
 // Helper for locatePrintIBD() to clear information in <theSegs>

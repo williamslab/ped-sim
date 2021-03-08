@@ -63,6 +63,10 @@ struct SimDetails {
       exit(5);
     }
     strcpy(name, other.name);
+
+    founderOffset = other.founderOffset;
+    numFounders = other.numFounders;
+    founderIdSuffix = other.founderIdSuffix;
   }
   ~SimDetails() {
     delete [] name;
@@ -76,6 +80,10 @@ struct SimDetails {
   int i1Sex;
   int **branchNumSpouses;
   char *name;
+
+  int founderOffset;
+  int numFounders;
+  vector<char *> founderIdSuffix;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -131,13 +139,14 @@ struct InheritRecord {
 
 struct IBDRecord {
   IBDRecord() { assert(false); }
-  IBDRecord(int og, int ob, int oi, int ci, int start, int end) {
+  IBDRecord(int og, int ob, int oi, int ci, int start, int end, int foundHap) {
     otherGen = og;
     otherBranch = ob;
     otherInd = oi;
     chrIdx = ci;
     startPos = start;
     endPos = end;
+    foundHapNum = foundHap;
 
     assert(startPos <= endPos);
   }
@@ -147,6 +156,7 @@ struct IBDRecord {
   int chrIdx;
   int startPos;
   int endPos;
+  int foundHapNum;
 };
 
 #endif // DATASTRUCTS_H
