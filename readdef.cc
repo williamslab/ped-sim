@@ -365,7 +365,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	      it->name);
       fprintf(stderr, "         can omit these branches and possibly reduce number of founders needed\n");
     }
-}
+  }
 
   if (simDetails.size() == 0) {
     fprintf(stderr, "ERROR: def file does not contain pedigree definitions;\n");
@@ -373,6 +373,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     exit(3);
   }
 
+  free(buffer);
   fclose(in);
 
   // don't need the spouse dependency sets anymore:
