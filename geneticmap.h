@@ -56,6 +56,15 @@ class GeneticMap {
       return chromEndGenet(chrIdx, sex) - chromStartGenet(chrIdx, sex);
     }
 
+    bool haveXmap() {
+      for(size_t i = 0; i < map.size(); i++) {
+	if (isX(i)) {
+	  return true;
+	}
+      }
+      return false;
+    }
+
   private:
     GeneticMap() { }; // disallow default constructor
 
