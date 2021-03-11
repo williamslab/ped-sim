@@ -15,6 +15,64 @@
 #include "fileorgz.h"
 #include "simulate.h"
 
+// Reads the file input with the `--sexes` option that specifies the sex of
+// individuals in the input VCF
+void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
+	       uint32_t sexCount[2], const char *sexesFile) {
+  FILE *in = fopen(sexesFile, "r");
+  if (!in) {
+    fprintf(stderr, "ERROR: could not open sexes file %s!\n", sexesFile);
+    perror("open");
+    exit(1);
+  }
+
+  size_t bytesRead = 1024;
+  char *buffer = (char *) malloc(bytesRead + 1);
+  if (buffer == NULL) {
+    fprintf(stderr, "ERROR: out of memory");
+    exit(5);
+  }
+  const char *delim = " \t\n";
+
+  int line = 0;
+  while (getline(&buffer, &bytesRead, in) >= 0) {
+    line++;
+
+    char *id, *sex, *saveptr;
+    id = strtok_r(buffer, delim, &saveptr);
+    if (id == NULL)
+      // blank line
+      continue;
+
+    sex = strtok_r(NULL, delim, &saveptr);
+    if (sex == NULL || strtok_r(NULL, delim, &saveptr) != NULL) {
+      fprintf(stderr, "ERROR: line %d in sexes file: expect two fields per line:\n",
+	      line);
+      fprintf(stderr, "       [id] [M/F]\n");
+      exit(6);
+    }
+    if (sex[1] != '\0' || (sex[0] != 'M' && sex[0] != 'F')) {
+      fprintf(stderr, "ERROR: line %d has a sex of %s but only 'M' or 'F' are valid\n",
+	      line, sex);
+      exit(6);
+    }
+
+    char *storeId = new char[ strlen(id) + 1 ]; // +1 for '\0'
+    if (storeId == NULL) {
+      fprintf(stderr, "ERROR: out of memory");
+      exit(5);
+    }
+    strcpy(storeId, id);
+
+    uint8_t sexIdx = (sex[0] == 'M') ? 0 : 1;
+    sexes[ storeId ] = sexIdx;
+    sexCount[ sexIdx ]++;
+  }
+
+  free(buffer);
+  fclose(in);
+}
+
 // Prints the sample id of the given sample to <out>.
 // Returns true if the sample is a founder, false otherwise.
 template<class IO_TYPE>
@@ -57,7 +115,7 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      GeneticMap &map, char *bpFile) {
   FILE *out = fopen(bpFile, "w");
   if (!out) {
-    printf("ERROR: could not open output file %s!\n", bpFile);
+    fprintf(stderr, "ERROR: could not open output file %s!\n", bpFile);
     perror("open");
     exit(1);
   }
@@ -87,6 +145,11 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 		fprintf(out, " s%d h%d", sex, h);
 
 		for(unsigned int chr = 0; chr < map.size(); chr++) {
+		  if (map.isX(chr) &&
+		      theSamples[ped][fam][gen][branch][ind].sex == 0 &&
+		      h == 0)
+		    continue; // no paternal X chromosome in males
+
 		  // print chrom name and starting position
 		  fprintf(out, " %s|%d", map.chromName(chr),
 			  map.chromStartPhys(chr));
@@ -112,8 +175,9 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 // Given an input VCF filename, determines whether the output should be gzipped
 // or not and calls makeVCF()
 int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	      int totalFounderHaps, const char *inVCFfile, char *outFile,
-	      GeneticMap &map, FILE *outs[2]) {
+	     int totalFounderHaps, const char *inVCFfile, char *outFile,
+	     GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
+	     unordered_map<const char*,uint8_t,HashString,EqString> &sexes) {
   // decide whether to use gz I/O or standard, and call makeVCF() accordingly
   int inVCFlen = strlen(inVCFfile);
   if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
@@ -121,20 +185,23 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
       return makeVCF<gzFile, FILE *>(simDetails, theSamples, totalFounderHaps,
 				     CmdLineOpts::inVCFfile,
-				     /*outVCFfile=*/ outFile, map, outs);
+				     /*outVCFfile=*/ outFile, map, outs,
+				     hapNumsBySex, sexes);
     }
     else {
       sprintf(outFile, "%s.vcf.gz", CmdLineOpts::outPrefix);
       return makeVCF<gzFile, gzFile>(simDetails, theSamples, totalFounderHaps,
 				     CmdLineOpts::inVCFfile,
-				     /*outVCFfile=*/ outFile, map, outs);
+				     /*outVCFfile=*/ outFile, map, outs,
+				     hapNumsBySex, sexes);
     }
   }
   else {
     sprintf(outFile, "%s.vcf", CmdLineOpts::outPrefix);
     return makeVCF<FILE *, FILE *>(simDetails, theSamples, totalFounderHaps,
 				   CmdLineOpts::inVCFfile,
-				   /*outVCFfile=*/ outFile, map, outs);
+				   /*outVCFfile=*/ outFile, map, outs,
+				   hapNumsBySex, sexes);
   }
 }
 
@@ -145,12 +212,13 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 template<typename I_TYPE, typename O_TYPE>
 int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
-	    GeneticMap &map, FILE *outs[2]) {
+	    GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
+	    unordered_map<const char*,uint8_t,HashString,EqString> &sexes) {
   // open input VCF file:
   FileOrGZ<I_TYPE> in;
   bool success = in.open(inVCFfile, "r");
   if (!success) {
-    printf("\nERROR: could not open input VCF file %s!\n", inVCFfile);
+    fprintf(stderr, "\nERROR: could not open input VCF file %s!\n", inVCFfile);
     perror("open");
     exit(1);
   }
@@ -159,7 +227,8 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   FileOrGZ<O_TYPE> out;
   success = out.open(outFileBuf, "w");
   if (!success) {
-    printf("\nERROR: could not open output VCF file %s!\n", outFileBuf);
+    fprintf(stderr, "\nERROR: could not open output VCF file %s!\n",
+	    outFileBuf);
     perror("open");
     exit(1);
   }
@@ -186,7 +255,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   char **hapAlleles = NULL; // stores all alleles from input sample
   char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
   if (founderHaps == NULL) {
-    printf("ERROR: out of memory");
+    fprintf(stderr, "ERROR: out of memory");
     exit(5);
   }
 
@@ -199,12 +268,14 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bool gotSomeData = false;
 
   int numInputSamples = 0;
+  vector<uint8_t> sampleSexes; // to check X genotypes in males
+  bool warnedHetMaleX = false;
   vector<int> shuffHaps; // For randomizing the assigned haplotypes
   vector<int> extraSamples; // Sample indexes to print for --retain_extra
   // map from haplotype index / 2 to sample_index
   int *founderSamples = new int[totalFounderHaps / 2];
   if (founderSamples == NULL) {
-    printf("ERROR: out of memory");
+    fprintf(stderr, "ERROR: out of memory");
     exit(5);
   }
   // number of elements of <extraSamples> to print (see below)
@@ -231,36 +302,21 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       // skip all the header fields relating to meta-data:
       char *saveptr;
-      char *token = strtok_r(in.buf, tab, &saveptr);
+      // these fields aren't important: aren't stored
+      strtok_r(in.buf, tab, &saveptr);
       for(int i = 1; i < 9; i++)
-	token = strtok_r(NULL, tab, &saveptr);
+	strtok_r(NULL, tab, &saveptr);
 
-      // now parse / store the sample ids:
+      // now parse / store the sample ids and get randomized haplotypes in a way
+      // that respects the sex of the input samples when necessary
       vector<char*> sampleIds;
-      while ((token = strtok_r(NULL, tab, &saveptr))) {
-	sampleIds.push_back(token);
-      }
+      getSampleIdsShuffHaps(sampleIds, sampleSexes, shuffHaps, outs,
+			    hapNumsBySex, sexes, saveptr, totalFounderHaps,tab);
+
       numInputSamples = sampleIds.size();
       hapAlleles = new char*[numInputSamples * 2]; // 2 for diploid samples
       if (hapAlleles == NULL) {
-	printf("ERROR: out of memory");
-	exit(5);
-      }
-
-      // Next generate an ordered list of haplotype indexes (2 * sample_index)
-      // and randomly shuffle it. The index of shuffHaps is the sample index
-      // and the value stored at the index is the (randomly assigned) haplotype
-      // index for its first allele. Ultimately we only care about the haplotype
-      // indexes that are < totalFounderHaps; those >= totalFounderHaps will
-      // not be used for the simulated samples and we will print their data
-      // (see below)
-      for(int i = 0; i < numInputSamples; i++)
-	shuffHaps.push_back(2 * i);
-      shuffle(shuffHaps.begin(), shuffHaps.end(), randomGen);
-
-      if (numInputSamples < totalFounderHaps / 2) {
-	fprintf(stderr, "\nERROR: need %d founders, but input only contains %d samples\n",
-		totalFounderHaps / 2, numInputSamples);
+	fprintf(stderr, "ERROR: out of memory");
 	exit(5);
       }
 
@@ -301,7 +357,8 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	sprintf(outFileBuf, "%s.ids", CmdLineOpts::outPrefix);
 	idOut = fopen(outFileBuf, "w");
 	if (!idOut) {
-	  printf("ERROR: could not open found ids file %s!\n", outFileBuf);
+	  fprintf(stderr, "ERROR: could not open found ids file %s!\n",
+		  outFileBuf);
 	  perror("open");
 	  exit(1);
 	}
@@ -354,8 +411,11 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    // print Ped-sim id to founder id file:
 		    printSampleId(idOut, simDetails[ped], fam, gen, branch,ind);
 
+		    // since males on the X chromosome only have a defined
+		    // haplotype for haps index 1, we use that index
 		    int hapNum = theSamples[ped][fam][gen][branch][ind].
-				      haps[0][/*chrIdx=*/0].front().foundHapNum;
+				      haps[1][/*chrIdx=*/0].front().foundHapNum;
+		    hapNum--; // hap index 1 is an odd number, so we decrement
 		    assert(hapNum % 2 == 0);
 		    int founderIdx = founderSamples[ hapNum / 2 ];
 		    fprintf(idOut, "\t%s\n", sampleIds[ founderIdx ]);
@@ -398,9 +458,9 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	chrName = map.chromName(chrIdx);
       }
       if (!gotSomeData || strcmp(chrom, chrName) != 0) {
-	printf("ERROR: chromosome %s in VCF file either out of order or not present\n",
-	       chrom);
-	printf("       in genetic map\n");
+	fprintf(stderr, "\nERROR: chromosome %s in VCF file either out of order or not present\n",
+		chrom);
+	fprintf(stderr, "       in genetic map\n");
 	exit(5);
       }
 
@@ -408,6 +468,9 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       chrBegin = map.chromStartPhys(chrIdx);
       chrEnd = map.chromEndPhys(chrIdx);
     }
+
+    if (sexes.size() == 0 && map.isX(chrIdx))
+      continue;
 
     gotSomeData = true;
 
@@ -448,8 +511,10 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     if (numAlleles > 2 && CmdLineOpts::genoErrRate > 0.0 &&
 						      !alleleCountWarnPrinted) {
       alleleCountWarnPrinted = true;
-      fprintf(stderr, "\nWARNING: genotyping error only implemented for markers with 2 alleles\n");
-      fprintf(stderr, "         will not introduce errors at any markers with >2 alleles\n");
+      for(int o = 0; o < 2; o++) {
+	fprintf(outs[o], "\nWARNING: genotyping error only implemented for markers with 2 alleles\n");
+	fprintf(outs[o], "         will not introduce errors at any markers with >2 alleles\n");
+      }
     }
 
     // read in/store the haplotypes
@@ -482,6 +547,33 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       alleles[0] = strtok_r(theGT, bar, &saveptrAlleles);
       alleles[1] = strtok_r(NULL, bar, &saveptrAlleles);
 
+      if (map.isX(chrIdx) && sampleSexes[inputIndex] == 0) {
+	if (alleles[1] == NULL) {
+	  alleles[1] = alleles[0];
+	}
+	else if (strcmp(alleles[0], alleles[1]) != 0) {
+	  if (!warnedHetMaleX) {
+	    for(int o = 0; o < 2; o++)
+	      fprintf(outs[o], "\nWARNING: heterozygous male X genotype found; will randomly pick an allele\n");
+	    warnedHetMaleX = true;
+	  }
+	  int keepHap = coinFlip(randomGen);
+	  alleles[ 1 ^ keepHap ] = alleles[keepHap];
+	}
+      }
+
+      // error check:
+      if (alleles[1] == NULL) {
+	fprintf(stderr, "ERROR: VCF contains genotype %s, which is not phased or contains one haplotype\n",
+		theGT);
+	fprintf(stderr, "       this is only allowed for males (input with --sexes) on the X chromosome\n");
+	exit(5);
+      }
+      if (strtok_r(NULL, bar, &saveptrAlleles) != NULL) {
+	fprintf(stderr, "ERROR: multiple '|' characters in data field\n");
+	exit(5);
+      }
+
       for(int h = 0; h < 2; h++) {
 	if (alleles[h][0] == '.') {
 	  fprintf(stderr, "\nERROR: simulator currently requires all positions to be non-missing\n");
@@ -499,23 +591,13 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	  founderHaps[founderIndex + h] = alleles[h];
       }
 
-      // error check:
-      if (alleles[1] == NULL) {
-	printf("ERROR: VCF contains data field %s, which is not phased\n",
-		theGT);
-	exit(5);
-      }
-      if (strtok_r(NULL, bar, &saveptrAlleles) != NULL) {
-	printf("ERROR: multiple '|' characters in data field\n");
-	exit(5);
-      }
     }
 
     bool fewer = numStored < numInputSamples * 2;
     bool more = sampStr != NULL;
     if (fewer || more) {
-      printf("ERROR: line in VCF file has data for %s than the indicated %d samples\n",
-	     (more) ? "more" : "fewer", numInputSamples);
+      fprintf(stderr, "ERROR: line in VCF file has data for %s than the indicated %d samples\n",
+	      (more) ? "more" : "fewer", numInputSamples);
       exit(6);
     }
 
@@ -544,10 +626,18 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	      int numPersons = numNonFounders + numFounders;
 
 	      for(int ind = 0; ind < numPersons; ind++) {
+		int numHaps = 2;
+		bool maleX = false;
+		if (map.isX(chrIdx) &&
+		    theSamples[ped][fam][gen][branch][ind].sex == 0) {
+		  maleX = true;
+		  // male X: haploid output per VCF spec
+		  numHaps = 1;
+		}
 
 		// set to missing (according to the rate set by the user)?
 		if (setMissing( randomGen )) {
-		  for(int h = 0; h < 2; h++)
+		  for(int h = 0; h < numHaps; h++)
 		    out.printf("%c.", betweenAlleles[h]);
 		  continue; // done printing genotype data for this sample
 		}
@@ -557,6 +647,12 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		// get founder haps for the current sample
 		uint32_t curFounderHaps[2];
 		for(int h = 0; h < 2; h++) {
+		  if (maleX && h == 0) {
+		    // only h == 1 valid for males on chrX
+		    curFounderHaps[h] = (uint32_t) -1; // placeholder: fix below
+		    continue;
+		  }
+
 		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
 								haps[h][chrIdx];
 		  while (curHap.front().endPos < pos) {
@@ -565,18 +661,20 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  assert(curHap.front().endPos >= pos);
 		  curFounderHaps[h] = curHap.front().foundHapNum;
 		}
+		if (maleX)
+		  curFounderHaps[0] = curFounderHaps[1];
 
 		// make this a pseudo haploid genotype?
 		if (CmdLineOpts::pseudoHapRate > 0) {
 		  if (isPseudoHap( randomGen )) {
 		    // pseudo-haploid; pick one haplotype to print
 		    int printHap = coinFlip(randomGen);
-		    for(int h = 0; h < 2; h++)
+		    for(int h = 0; h < numHaps; h++)
 		      out.printf("%c%s", betweenAlleles[h],
 				 founderHaps[ curFounderHaps[printHap] ]);
 		  }
 		  else { // not pseudo-haploid => both alleles missing:
-		    for(int h = 0; h < 2; h++)
+		    for(int h = 0; h < numHaps; h++)
 		      out.printf("%c.", betweenAlleles[h]);
 		  }
 		  continue;
@@ -585,7 +683,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		// genotyping error?
 		if (genoErr( randomGen ) && numAlleles == 2) {
 		  int alleles[2]; // integer allele values
-		  for(int h = 0; h < 2; h++)
+		  for(int h = 0; h < numHaps; h++)
 		    // can get character 0 from founderHaps strings: with only
 		    // two alleles possible, these strings must have length 1.
 		    // converting to an integer is simple: subtract '0'
@@ -608,14 +706,16 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		      // heterozygous; randomly choose which
 		      int alleleToFlip = coinFlip(randomGen);
 		      alleles[ alleleToFlip ] ^= 1;
+		      if (maleX) // ensure male homozygous on X
+			alleles[ 1^alleleToFlip ] ^= 1;
 		    }
 		  }
 
-		  for(int h = 0; h < 2; h++)
+		  for(int h = 0; h < numHaps; h++)
 		    out.printf("%c%d", betweenAlleles[h],alleles[h]);
 		}
 		else { // no error: print alleles from original haplotypes
-		  for(int h = 0; h < 2; h++)
+		  for(int h = 0; h < numHaps; h++)
 		    out.printf("%c%s", betweenAlleles[h],
 			       founderHaps[ curFounderHaps[h] ]);
 		}
@@ -625,7 +725,11 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     // print data for the --retain_extra samples:
     for(unsigned int i = 0; i < numToRetain; i++) {
       int sampIdx = extraSamples[i];
-      for(int h = 0; h < 2; h++)
+      int numHaps = 2;
+      if (map.isX(chrIdx) && sampleSexes[sampIdx] == 0)
+	// male X: haploid output per VCF spec
+	numHaps = 1;
+      for(int h = 0; h < numHaps; h++)
 	out.printf("%c%s", betweenAlleles[h], hapAlleles[ 2*sampIdx + h ]);
     }
 
@@ -638,6 +742,132 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   return 0;
 }
 
+// Reads the sample ids from the VCF, stores them for printing the .ids file
+// and any --retain_extra samples. Also maps them to sexes if --sexes was
+// supplied and randomizes the assignment of these samples to founders, keeping
+// sexes the same when --sexes is supplied
+void getSampleIdsShuffHaps(vector<char*> &sampleIds,
+		vector<uint8_t> &sampleSexes, vector<int> &shuffHaps,
+		FILE *outs[2], vector<int> hapNumsBySex[2],
+		unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
+		char *&saveptr, int totalFounderHaps, const char *tab) {
+  // Need to randomly assign these samples to founder haplotypes.
+  // <hapNumsBySex> contains all the haplotype numbers distinguished by the sex
+  // of the founder. If the sexes of the VCF samples is known (in <sexes>), we
+  // assign consistent with sex. Otherwise, it is fully randomized.
+
+  // Begin by putting the sex specific haplotype indexes in <sexSpecHapIdxs>.
+  // This differs from <hapNumsBySex> in that:
+  // - The number of entries in [0] and [1] is equal to the number of males
+  //   and females in the VCF file (<hapNumsBySex> has the number of simulated
+  //   samples)
+  // - Index [2] contains the number of input samples without sex assignments
+  //   Note: if the --sexes option was not used, *all* haplotype numbers end up
+  //   in this index
+  vector<int> sexSpecHapIdxs[3];
+
+  // Should we assign haplotypes according to the sexes of the samples? Only
+  // if we have sexes (via --sexes)
+  bool respectSexes = sexes.size() > 0;
+
+  // what is the next index in <hapNumsBySex> that should be assigned to
+  // <sexSpecHapIdxs>?
+  int hapNumsIdx[2] = { 0, 0 };
+  for(int sex = 0; sex < 2; sex++)
+    if (hapNumsBySex[sex].size() == 0)
+      hapNumsIdx[sex] = -1; // none to assign
+
+  // What is the index of the next any-sex haplotype to assign. If
+  // <respectSexes>, it's the one immediately following the last haplotype
+  // assigned (i.e., <totalFounderHaps>). Otherwise, all get assigned to
+  // sexSpecHapIdxs[2], and we start from index 0.
+  int nextAnySexHap;
+  if (respectSexes)
+    nextAnySexHap = totalFounderHaps;
+  else
+    nextAnySexHap = 0;
+
+  uint32_t sexCounts[3] = { 0, 0, 0 };
+  char *token;
+  while ((token = strtok_r(NULL, tab, &saveptr))) {
+    sampleIds.push_back(token);
+
+    uint8_t sexIdx = 2;
+    if (respectSexes) {
+      auto sexEntry = sexes.find(token);
+      if (sexEntry != sexes.end())
+	sexIdx = sexEntry->second;
+    }
+    if (sexIdx < 2 && hapNumsIdx[sexIdx] >= 0) {
+      sexSpecHapIdxs[sexIdx].push_back(
+				  hapNumsBySex[sexIdx][ hapNumsIdx[ sexIdx ] ]);
+      hapNumsIdx[sexIdx]++;
+      if (hapNumsIdx[sexIdx] >= (int) hapNumsBySex[sexIdx].size())
+	hapNumsIdx[sexIdx] = -1; // no more haplotypes to assign of this sex
+    }
+    else {
+      sexSpecHapIdxs[sexIdx].push_back(nextAnySexHap);
+      // increment by 2 because these are for pairs of haplotypes
+      // (only even numbers are stored in <hapNumsBySex>)
+      nextAnySexHap += 2;
+    }
+    sampleSexes.push_back(sexIdx);
+    sexCounts[sexIdx]++;
+  }
+
+  if (respectSexes && sexCounts[2] > 0) {
+    for(int o = 0; o < 2; o++)
+      fprintf(outs[o], "\nWARNING: %u samples in the VCF did not have sexes assigned\n",
+	      sexCounts[2]);
+  }
+
+  if (respectSexes) {
+    if (hapNumsIdx[0] >= 0 || hapNumsIdx[1] >= 0) {
+      if (sexCounts[2] == 0)
+	fprintf(stderr, "\n");
+      fprintf(stderr, "ERROR: need at least %lu females and %lu males to simulate, but the VCF\n",
+	      hapNumsBySex[1].size(), hapNumsBySex[0].size());
+      fprintf(stderr, "       only contains %d females and %d males as specified by the sexes file\n",
+	      sexCounts[1], sexCounts[0]);
+      fprintf(stderr, "       Note: it is always possible to run without an input VCF or to get\n");
+      fprintf(stderr, "       autosomal genotypes by running without the --sexes option\n");
+      exit(5);
+    }
+  }
+  else {
+    if (nextAnySexHap < totalFounderHaps) {
+      // Sample count is hap count / 2
+      fprintf(stderr, "\nERROR: need %d founders, but input only contains %d samples\n",
+	  totalFounderHaps / 2, nextAnySexHap / 2);
+      exit(5);
+    }
+  }
+
+  // Now shuffle the haplotypes. We begin by shuffling within the various sex
+  // groups. We then insert these into <shuffHaps> below, respecting the order
+  // of the sexes of the input samples (as now stored in <sampleSexes>).
+  // The corresponding sample in the VCF will be assigned the haplotype number
+  // for simulated samples, so we are logically shuffling the simulated
+  // samples, not the input samples. (The latter must be read in in a fixed
+  // order -- the same order stored in <shuffHaps>).
+  // Ultimately only the haplotype indexes that are < totalFounderHaps are for
+  // simulated samples; those >= totalFounderHaps will be printed if
+  // --retain_extra is in place
+  for(int sexIdx = 0; sexIdx < 3; sexIdx++)
+    shuffle(sexSpecHapIdxs[sexIdx].begin(), sexSpecHapIdxs[sexIdx].end(),
+	    randomGen);
+
+  int curSSHapIdx[3] = { 0, 0, 0 };
+  for(uint32_t i = 0; i < sampleSexes.size(); i++) {
+    uint8_t curSex = sampleSexes[i];
+    shuffHaps.push_back( sexSpecHapIdxs[ curSex ][ curSSHapIdx[ curSex ] ] );
+    curSSHapIdx[curSex]++;
+  }
+
+  assert(shuffHaps.size() == sampleIds.size());
+}
+
+
 // print fam format file with the pedigree structure of all individuals included
 // in the simulation
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
@@ -645,7 +875,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
   // open output fam file:
   FILE *out = fopen(famFile, "w");
   if (!out) {
-    printf("ERROR: could not open output fam file %s!\n", famFile);
+    fprintf(stderr, "ERROR: could not open output fam file %s!\n", famFile);
     perror("open");
     exit(1);
   }

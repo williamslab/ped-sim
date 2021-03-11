@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.1.18"
-#define RELEASE_DATE	" 8 Mar 2021"
+#define VERSION_NUMBER	"1.2"
+#define RELEASE_DATE	"11 Mar 2021"
 
 class CmdLineOpts {
   public:
@@ -87,6 +87,8 @@ class CmdLineOpts {
     // Name of the X chromosome
     static char *chrX;
 
+    // File with sexes of input VCF samples
+    static char *vcfSexesFile;
 };
 
 #endif // CMDOPTIONS_H

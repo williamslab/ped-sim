@@ -3,6 +3,7 @@
 // This program is distributed under the terms of the GNU General Public License
 
 #include <vector>
+#include <string.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -81,6 +82,11 @@ struct SimDetails {
   int **branchNumSpouses;
   char *name;
 
+  // For printing the mrca file, must map founder haplotype numbers to founder
+  // ids; because there are many duplicate pedigrees with the same founder ids
+  // modulo the number of founders, we store the suffix here and the number
+  // of founders per pedigree. We must also subtract off the offset or the first
+  // founder haplotype number before the given pedigree.
   int founderOffset;
   int numFounders;
   vector<char *> founderIdSuffix;
@@ -157,6 +163,21 @@ struct IBDRecord {
   int startPos;
   int endPos;
   int foundHapNum;
+};
+
+struct EqString {
+  bool operator()(const char *s1, const char *s2) const {
+    return strcmp(s1, s2) == 0;
+  }
+};
+struct HashString {
+  size_t operator()(const char *key) const {
+    size_t prime = 1099511628211ul;
+    size_t hash = 14695981039346656037ul;
+    for(size_t i = 0; key[i] != '\0'; i++)
+      hash = (hash ^ key[i]) * prime;
+    return hash;
+  }
 };
 
 #endif // DATASTRUCTS_H

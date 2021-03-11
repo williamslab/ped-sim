@@ -32,6 +32,7 @@ int    CmdLineOpts::retainExtra = 0;
 int    CmdLineOpts::printFounderIds = 0;
 char  *CmdLineOpts::fixedCOfile = NULL;
 char  *CmdLineOpts::chrX = NULL;
+char  *CmdLineOpts::vcfSexesFile = NULL;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
@@ -44,6 +45,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     MISS_RATE,
     PSEUDO_HAP_RATE,
     FIXED_CO,
+    SEXES,
   };
 
   // This is a local variable because whenever <interfereFile> is NULL, the
@@ -56,6 +58,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"intf", required_argument, NULL, INTERFERENCE},
     {"pois", no_argument, &poisson, 1},
     {"seed", required_argument, NULL, RAND_SEED},
+    {"sexes", required_argument, NULL, SEXES},
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
     {"mrca", no_argument, &CmdLineOpts::printMRCA, 1},
@@ -209,6 +212,15 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	}
 	fixedCOfile = optarg;
 	break;
+      case SEXES:
+	if (vcfSexesFile != NULL) {
+	  if (haveGoodArgs)
+	    fprintf(stderr, "\n");
+	  fprintf(stderr, "ERROR: multiple definitions of the VCF sexes file\n");
+	  haveGoodArgs = false;
+	}
+	vcfSexesFile = optarg;
+	break;
 
       case '?':
 	// bad option; getopt_long already printed error message
@@ -300,7 +312,10 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\t\t\t  can be gzipped (with .gz extension) or not\n");
   fprintf(out, "\t\t\t  required for genetic data output\n");
   fprintf(out, "  -X <string>\t\tassign the label of the X chromosome (default: X)\n");
-  fprintf(out, "\n");
+  fprintf(out, "  --sexes <filename>\tsexes (M/F) for all samples in the input VCF\n");
+  fprintf(out, "\t\t\t  required if the input VCF contains X chromosome data\n");
+  fprintf(out, "\t\t\t  (otherwise data for the X chromosome is not output and\n");
+  fprintf(out, "\t\t\t   founder genotypes are assigned irrespective of sex)\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
   fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");

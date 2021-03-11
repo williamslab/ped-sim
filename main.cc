@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
+#include <unordered_map>
 #include <random>
 #include <sys/time.h>
 #include "cmdlineopts.h"
@@ -126,6 +127,20 @@ int main(int argc, char **argv) {
   }
 #endif // NOFIXEDCO
 
+  unordered_map<const char*,uint8_t,HashString,EqString> sexes;
+  uint32_t sexesCountData[2] = { 0, 0 };
+  bool haveXmap = map.haveXmap();
+  if (CmdLineOpts::inVCFfile) {
+    if (!CmdLineOpts::vcfSexesFile && haveXmap) {
+      for(int o = 0; o < 2; o++) {
+	fprintf(outs[o], "WARNING: input VCF supplied and an X chromosome genetic map, but no --sexes file\n");
+	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
+      }
+    }
+    else
+      readSexes(sexes, sexesCountData, CmdLineOpts::vcfSexesFile);
+  }
+
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the def file
   // The second index is the family: we replicate the same pedigree structure
@@ -146,10 +161,27 @@ int main(int argc, char **argv) {
     fprintf(outs[o], "Simulating haplotype transmissions... ");
     fflush(outs[o]);
   }
+  vector<int> hapNumsBySex[2];
   int totalFounderHaps = simulate(simDetails, theSamples, map, sexSpecificMaps,
-				  coIntf, hapCarriers);
+				  coIntf, hapCarriers, hapNumsBySex);
   for(int o = 0; o < 2; o++)
     fprintf(outs[o], "done.\n");
+
+  if (sexesCountData[0] > 0 || sexesCountData[1] > 0) {
+    if (sexesCountData[0] < hapNumsBySex[0].size() ||
+				  sexesCountData[1] < hapNumsBySex[1].size()) {
+      for(int o = 0; o < 2; o++) {
+	fprintf(outs[o], "\n");
+	fprintf(outs[o], "ERROR: need the input VCF to contain at least %lu females and %lu males, but\n",
+		hapNumsBySex[1].size(), hapNumsBySex[0].size());
+	fprintf(outs[o], "       the sexes file indicates there are %u females and %u males in the VCF\n",
+		sexesCountData[1], sexesCountData[0]);
+	fprintf(outs[o], "       Note: it is always possible to run without an input VCF or to get\n");
+	fprintf(outs[o], "       autosomal genotypes by running without the --sexes option\n");
+	exit(8);
+      }
+    }
+  }
 
   if (CmdLineOpts::printBP) {
     for(int o = 0; o < 2; o++) {
@@ -203,7 +235,8 @@ int main(int argc, char **argv) {
     // VCF file
 
     int ret = printVCF(simDetails, theSamples, totalFounderHaps,
-		       CmdLineOpts::inVCFfile, outFile, map, outs);
+		       CmdLineOpts::inVCFfile, outFile, map, outs,
+		       hapNumsBySex, sexes);
 
     if (ret == 0)
       for(int o = 0; o < 2; o++)

@@ -23,7 +23,8 @@ exponential_distribution<double> crossoverDist(1.0);
 // simulated samples.
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     GeneticMap &map, bool sexSpecificMaps, vector<COInterfere> &coIntf,
-	     vector< vector< vector<InheritRecord> > > &hapCarriers) {
+	     vector< vector< vector<InheritRecord> > > &hapCarriers,
+	     vector<int> hapNumsBySex[2]) {
   // Note: throughout we use 0-based values for generations though the input
   // def file is 1-based
 
@@ -174,38 +175,36 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    // Simulate the founders for this chromosome:
 	    if (curGen != numGen - 1) { // no founders in the last generation
 	      for(int ind = 0; ind < numFounders; ind++) {
-		for(int h = 0; h < 2; h++) { // 2 founder haplotypes per founder
-		  if (map.isX(chrIdx) && h == 0 &&
-		      theSamples[ped][fam][curGen][branch][ind].sex == 0)
-		    // only one haplotype (maternal) for males on X
-		    continue;
+		if (fam == 0 && CmdLineOpts::printMRCA) {
+		  // number of digits for the numbers is 1 + (value+1) / 10
+		  // 6 for 'g-b-i\0'
+		  int branchNumSpouses =
+			  getBranchNumSpouses(simDetails[ped], curGen, branch);
+		  int idLength = 6 + 1 + (curGen + 1) / 10 +
+				     1 + (branch + 1) / 10 +
+				     1 + (ind + 1) / 10;
+		  char *idSuffix = new char[ idLength ];
+		  if (ind < branchNumSpouses)
+		    sprintf(idSuffix, "g%d-b%d-s%d", curGen + 1, branch + 1,
+			    ind + 1);
+		  else
+		    sprintf(idSuffix, "g%d-b%d-i%d", curGen + 1, branch + 1,
+			    ind - branchNumSpouses + 1);
+		  // same founder for two ids in a row for the two haplotypes:
+		  simDetails[ped].founderIdSuffix.push_back(idSuffix);
+		  simDetails[ped].founderIdSuffix.push_back(idSuffix);
+		}
 
+		for(int h = 0; h < 2; h++) { // 2 founder haplotypes per founder
 		  int foundHapNum;
 		  if (chrIdx == 0) {
 		    foundHapNum = totalFounderHaps++;
-
-		    if (fam == 0 && CmdLineOpts::printMRCA) {
-		      // number of digits for the numbers is 1 + (value+1) / 10
-		      // 6 for 'g-b-i\0'
-		      if (h == 0) {
-			int branchNumSpouses =
-			  getBranchNumSpouses(simDetails[ped], curGen, branch);
-			int idLength = 6 + 1 + (curGen + 1) / 10 +
-					   1 + (branch + 1) / 10 +
-					   1 + (ind + 1) / 10;
-			char *idSuffix = new char[ idLength ];
-			if (ind < branchNumSpouses)
-			  sprintf(idSuffix, "g%d-b%d-s%d", curGen + 1,
-				  branch + 1, ind + 1);
-			else
-			  sprintf(idSuffix, "g%d-b%d-i%d", curGen + 1,
-				  branch + 1, ind - branchNumSpouses + 1);
-			// same founder for two ids in a row for the two
-			// haplotypes:
-			simDetails[ped].founderIdSuffix.push_back(idSuffix);
-			simDetails[ped].founderIdSuffix.push_back(idSuffix);
-		      }
-		    }
+		    int founderSex =
+				  theSamples[ped][fam][curGen][branch][ind].sex;
+		    if (h == 0)
+		      // track which hap numbers (only the even indexed ones)
+		      // are of each sex (for use when outputting VCFs):
+		      hapNumsBySex[founderSex].push_back( foundHapNum );
 
 		    hapCarriers.emplace_back();
 		    hapCarriers[ foundHapNum ].reserve( numChrs );
@@ -218,6 +217,11 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		    foundHapNum =
 			theSamples[ped][fam][curGen][branch][ind].haps[h].
 						      back().back().foundHapNum;
+
+		  if (map.isX(chrIdx) && h == 0 &&
+		      theSamples[ped][fam][curGen][branch][ind].sex == 0)
+		    // only one haplotype (maternal) for males on X
+		    continue;
 
 		  trivialSeg.foundHapNum = foundHapNum;
 

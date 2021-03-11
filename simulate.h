@@ -19,7 +19,8 @@ extern exponential_distribution<double> crossoverDist;
 
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     GeneticMap &map, bool sexSpecificMaps, vector<COInterfere> &coIntf,
-	     vector< vector< vector<InheritRecord> > > &hapCarriers);
+	     vector< vector< vector<InheritRecord> > > &hapCarriers,
+	     vector<int> hapNumsBySex[2]);
 void getPersonCounts(int curGen, int numGen, int branch, int **numSampsToPrint,
 		     Parent **branchParents, int **branchNumSpouses,
 		     int &numFounders, int &numNonFounders);
