@@ -4,6 +4,18 @@ Program to simulate pedigree structures. The method can use sex-specific
 genetic maps and randomly assigns the sex of each parent (or uses user-specified
 sexes) when using such maps.
 
+Recent updates
+--------------
+
+Version 1.2 now supports simulating the X chromosome. See the [map
+file](#map-file) section for code to generate a map file that includes X
+chromosome positions from the [Bhérer et al.
+(2017)](http://dx.doi.org/10.1038/ncomms14994) map. To simulate genetic data
+(i.e., output a VCF file) that includes the X chromosome, [specify sexes of
+the input VCF using `--sexes`](#specifying-sexes-of-samples-in-the-input-vcf).
+To change the name Ped-sim considers as the X chromosome [use the `-X`
+option](#x-chromosome-name--x-string).
+
 Table of Contents
 -----------------
    * Pedigree Simulator
@@ -531,7 +543,9 @@ awk 'NR > 1 { print $1,$2,"0.0",$4 }' Refined_genetic_map_b37/female_chrX.txt \
     | sed 's/^chr//' >> refined_mf_X.simmap
 ```
 
-This produces a file called `refined_mf_X.simmap`.
+This produces a file called `refined_mf_X.simmap`. If simulating with
+interference the `interfere/nu_p_campbell_X.tsv` file includes parameters for
+the X chromosome.
 
 **Note:** to output X chromosome data when using an input VCF, [the `--sexes`
 option is required as described below](#specifying-sexes-of-samples-in-the-input-vcf).
