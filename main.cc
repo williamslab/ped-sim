@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
 	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
       }
     }
-    else
+    else if (CmdLineOpts::vcfSexesFile)
       readSexes(sexes, sexesCountData, CmdLineOpts::vcfSexesFile);
   }
 
