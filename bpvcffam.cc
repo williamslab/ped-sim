@@ -237,6 +237,15 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bernoulli_distribution homErr( CmdLineOpts::homErrRate );
   bernoulli_distribution setMissing( CmdLineOpts::missRate );
   bernoulli_distribution isPseudoHap( CmdLineOpts::pseudoHapRate );
+  // below, if a male is heterozygous on the X chromosome, we choose a random
+  // allele. If this code is run with different values for the distributions
+  // above, that can affect the outcome of the heterozygous male allele choice
+  // (e.g., if the error or missing rates are 0) since it modifies the
+  // state of the random number generator at the next decision point for the
+  // male heterozygote. To avoid these issues, we use a different random
+  // generator for the het male choice, and we define the generator now before
+  // any further random numbers are generated
+  mt19937 hetMaleXRandGen( randomGen );
 
   // technically tab and newline; we want the latter so that the last sample id
   // on the header line doesn't include the newline character in it
@@ -557,7 +566,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	      fprintf(outs[o], "\nWARNING: heterozygous male X genotype found; will randomly pick an allele\n");
 	    warnedHetMaleX = true;
 	  }
-	  int keepHap = coinFlip(randomGen);
+	  int keepHap = coinFlip(hetMaleXRandGen);
 	  alleles[ 1 ^ keepHap ] = alleles[keepHap];
 	}
       }
