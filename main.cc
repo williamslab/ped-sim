@@ -210,7 +210,7 @@ int main(int argc, char **argv) {
     sprintf(mrcaFile, "%s.mrca", CmdLineOpts::outPrefix);
   }
   locatePrintIBD(simDetails, hapCarriers, map, sexSpecificMaps,
-		 /*ibdFile=*/ outFile, /*onlyGenetLen=*/ false,
+		 /*ibdFile=*/ outFile, /*ibdSegs=print them only=*/ NULL,
 		 mrcaFile);
   for(int o = 0; o < 2; o++) {
     fprintf(outs[o], "done.\n");

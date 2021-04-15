@@ -3,6 +3,7 @@
 // This program is distributed under the terms of the GNU General Public License
 
 #include <vector>
+#include <tuple>
 #include "datastructs.h"
 #include "geneticmap.h"
 
@@ -17,17 +18,19 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b);
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
-		    bool onlyGenetLen, char *mrcaFile);
+		    vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+		    char *mrcaFile);
 void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
-	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen,
+	      GeneticMap &map, bool sexSpecificMaps,
+	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
 	      FILE *mrcaOut);
 void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap);
 void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 			int gen, int branch, int ind, IBDRecord &seg,
-			int realStart, int realEnd, const char *type,
+			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
-			bool onlyGenetLen);
+			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs);
 void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
 		       int fam);
 void clearTheSegs(SimDetails &pedDetails, 

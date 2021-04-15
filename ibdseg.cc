@@ -44,13 +44,14 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b) {
 }
 
 // Locates and prints IBD segments using <hapCarriers>
-// If <onlyGenetLen>, omits the start and end genetic positions and only gives
-// the segment length
+// if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
+// on HAPI-DNA.org displays
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
-		    bool onlyGenetLen, char *mrcaFile) {
-  FILE *out;
+		    vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+		    char *mrcaFile) {
+  FILE *out = NULL;
   if (ibdFile != NULL) {
     out = fopen(ibdFile, "w");
     if (!out) {
@@ -58,9 +59,6 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
       perror("open");
       exit(1);
     }
-  }
-  else {
-    out = stdout;
   }
 
   FILE *mrcaOut = NULL;
@@ -168,7 +166,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	  // print stored segments, locating any IBD2
 	  if (curPed >= 0)
 	    printIBD(out, simDetails[curPed], curFam, theSegs, map,
-		     sexSpecificMaps, onlyGenetLen, mrcaOut);
+		     sexSpecificMaps, ibdSegs, mrcaOut);
 	  // update:
 	  curPed = it1->ped;
 	  curFam = it1->fam;
@@ -257,20 +255,21 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
   if (curPed >= 0)
     printIBD(out, simDetails[curPed], curFam, theSegs, map, sexSpecificMaps,
-	     onlyGenetLen, mrcaOut);
+	     ibdSegs, mrcaOut);
 
-  if (out != stdout)
+  if (out)
     fclose(out);
 
   delete [] theSegs;
 }
 
 // print stored segments, locating any IBD2 regions
-// If <onlyGenetLen>, omits the start and end genetic positions and only gives
-// the segment length
+// if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
+// on HAPI-DNA.org displays
 void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
-	      GeneticMap &map, bool sexSpecificMaps, bool onlyGenetLen,
+	      GeneticMap &map, bool sexSpecificMaps,
+	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
 	      FILE *mrcaOut) {
   // Go through <theSegs> and print segments for samples that were listed as
   // printed in the def file
@@ -334,8 +333,8 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
 				   segs[i], /*realStart=*/ segs[i].startPos,
 				   /*realEnd=*/ segs[i + nextI].startPos - 1,
-				   /*type=*/ "IBD1", map, sexSpecificMaps,
-				   onlyGenetLen);
+				   /*type=IBD1=*/ 1, map, sexSpecificMaps,
+				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
 				    fam);
@@ -347,8 +346,8 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				 segs[i],
 				 /*realStart=*/ segs[i + nextI].startPos,
 				 /*realEnd=*/ ibd2End,
-				 /*type=*/ "IBD2", map, sexSpecificMaps,
-				 onlyGenetLen);
+				 /*type=IBD2=*/ 2, map, sexSpecificMaps,
+				 ibdSegs);
 	      if (mrcaOut)
 		printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
 				  fam);
@@ -412,8 +411,8 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   segs[i],
 				   /*realStart=standard=*/ segs[i].startPos,
 				   /*realEnd=standard=*/ segs[i].endPos,
-				   /*type=*/ "HBD", map, sexSpecificMaps,
-				   onlyGenetLen);
+				   /*type=HBD=*/ 0, map, sexSpecificMaps,
+				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
 				    fam);
@@ -424,8 +423,8 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   segs[i],
 				   /*realStart=standard=*/ segs[i].startPos,
 				   /*realEnd=standard=*/ segs[i].endPos,
-				   /*type=*/ "IBD1", map, sexSpecificMaps,
-				   onlyGenetLen);
+				   /*type=IBD1=*/ 1, map, sexSpecificMaps,
+				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
 				    fam);
@@ -512,23 +511,25 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
 }
 
 // Prints the IBD segment described by the parameters to <out>
-// If <onlyGenetLen>, omits the start and end genetic positions and only gives
-// the segment length
+// if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
+// on HAPI-DNA.org displays
 void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 			int gen, int branch, int ind, IBDRecord &seg,
-			int realStart, int realEnd, const char *type,
+			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
-			bool onlyGenetLen) {
-  if (!onlyGenetLen) { // TODO: rename parameter: eliminating sample id cols too
+			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs){
+  const char *ibdTypeStr[3] = { "HBD", "IBD1", "IBD2" };
+
+  if (out) { // want to print the segment (if not, <ibdSegs> will be non-NULL)
     printSampleId(out, pedDetails, fam, gen, branch, ind);
     fprintf(out, "\t");
     printSampleId(out, pedDetails, fam, seg.otherGen, seg.otherBranch,
 		  seg.otherInd);
     fprintf(out, "\t");
-  }
 
-  fprintf(out, "%s\t%d\t%d\t%s", map.chromName(seg.chrIdx), realStart, realEnd,
-	  type);
+    fprintf(out, "%s\t%d\t%d\t%s", map.chromName(seg.chrIdx), realStart,
+	    realEnd, ibdTypeStr[ ibdType ]);
+  }
 
   // Find the genetic positions of the start and ends
   int ibdPhys[2] = { realStart, realEnd };
@@ -593,11 +594,13 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
     }
   }
 
-  if (onlyGenetLen)
-    fprintf(out, "\t%lf\n", ibdGenet[1] - ibdGenet[0]);
-  else
+  if (out)
     fprintf(out, "\t%lf\t%lf\t%lf\n", ibdGenet[0], ibdGenet[1],
 	    ibdGenet[1] - ibdGenet[0]);
+
+  if (ibdSegs)
+    ibdSegs->emplace_back(seg.chrIdx, realStart, realEnd, ibdType,
+			  ibdGenet[1] - ibdGenet[0]);
 }
 
 // For printing the founder id that segments coalesce in to the .mrca
