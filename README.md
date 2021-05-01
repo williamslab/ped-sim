@@ -7,6 +7,9 @@ sexes) when using such maps.
 Recent updates
 --------------
 
+Version 1.3 now supports branch-specific sex assignments in the
+[def file](#def-file).
+
 Version 1.2 now supports simulating the X chromosome. See the [map
 file](#map-file) section for code to generate a map file that includes X
 chromosome positions from the [Bhérer et al.
