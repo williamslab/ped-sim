@@ -208,14 +208,26 @@ The above are defaults, and the parents of a branch can be assigned in the
 branch specifications.
 
 `<branch_specifications>` is an optional set of one or more fields containing
-(a) no-print branches and/or (b) non-default parent assignments for a set of
-branches. The default parent assignments are given above, and by default, all
-branches have the same number of individuals printed (given in the
-`[#samples_to_print]` field).
+(a) no-print branches, (b) sex assignments, and/or (c) non-default parent
+assignments for a set of branches. By default, all branches have the same
+number of individuals printed (given in the `[#samples_to_print]` field), and
+the sexes are assigned randomly.
 
 **No-print branches** have the format:
 
     [current_branches]n
+
+**Sex assignments** have two possible formats for males and females,
+respectively:
+
+    [current_branches]sM
+    [current_branches]sF
+
+For example, `2sM` says that branch 2 in the current generation should be male
+and `1,3-5sF` indicates that branches 1, 3, 4, and 5 should be female. (See
+just below for more detail on `[current_branches]`.) _Note_ these
+branch-specific sex assignments override the `<sex of i1>` field that appears
+on the `def` line (see above).
 
 **Parent assignments** have any of the following formats:
 
@@ -224,12 +236,13 @@ branches have the same number of individuals printed (given in the
     [current_branches]:[parent_branch1]_[parent_branch2]
     [current_branches]:[parent_branch1]_[parent_branch2]^[parent_branch2_generation]
 
-In both cases, `[current_branches]` contains a range of branches from the
-current generation who should either not be printed or whose parents are
-assigned after the `:` character. This can be a single branch or comma
-separated list of branches such as `1,2,3` or, for a contiguous range, you can
-use a hyphen as in `1-3`. Any combination of contiguous ranges and comma
-separated sets of branches are allowed such as `2-5,7,9-10`.
+In all three cases, `[current_branches]` contains a range of branches from the
+current generation who should either not be printed, should have their sex
+assigned or whose parents are assigned after the `:` character. This can be a
+single branch or comma separated list of branches such as `1,2,3` or, for a
+contiguous range, you can use a hyphen as in `1-3`. Any combination of
+contiguous ranges and comma separated sets of branches are allowed such as
+`2-5,7,9-10`.
 
 For parent assignments:
 
@@ -482,6 +495,24 @@ includes only branch number 1, these branches are the offspring of two
 different founder spouses and are thus half-siblings. In consequence, the
 ultimate descendants in generation 4 are a mix of (full) first cousins and
 half-second cousins.
+
+### Example def file: `example/cousins-parent-sex-assign.def`
+
+Example pedigrees with sex assignments are in
+`example/cousins-parent-sex-assign.def`, which includes the three possible ways
+that full first cousins can be related: through two brothers, two sisters, or a
+sister and brother. Taking the second definition as an example:
+
+    def sis-1cousin 10 3
+    2 0 2  1sF  2sF
+    3 1
+
+As in other example pedigrees for cousins, generation two contains two branches
+and these default to having generation 1, branch 1 as their parent branch (and
+they are therefore full siblings). The sex assignments are the last two fields
+on the generation 2 line: `1sF` indicates that the `i1` individual in branch 1
+should be female and `2sF` similarly says that branch 2's `i1` individual
+needs to be female.
 
 ### Other example def files
 

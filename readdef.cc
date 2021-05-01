@@ -2,7 +2,6 @@
 //
 // This program is distributed under the terms of the GNU General Public License
 
-#include <set>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,9 +41,15 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   // Gives numerical values indicating dependencies of sex assignments for each
   // branch. For example, if the person in branch 1 has children with the
   // individual in branch 2 and 3, branch 2 and 3 must have the same sex.
-  int **curSexConstraints = NULL;
+  // Also stores the sexes of the i1 individuals when these are specified in
+  // the def file.
+  SexConstraint **curSexConstraints = NULL;
+  // Branch-specific sexes of i1 individuals (this value is temporary: its
+  // contents get put into <curSexConstraints> during processing)
+  int **curBranchI1Sex = NULL;
   // If all i1 individuals are to have the same sex, the following gives its
   // value. A value of -1 corresponds to random assignment.
+  // Branch-specific i1 specifications override this
   int curI1Sex = -1;
   // Counts of number of non-founder spouses for each generation/branch
   int **curBranchNumSpouses = NULL;
@@ -61,7 +66,12 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   vector<bool> branchParentsAssigned;
   // Stores sets of individuals that are required to have the same and/or
   // opposite sex assignments by virtue of their being spouses.
-  vector< set<Parent,ParentComp>* > spouseDependencies;
+  // Also, for each set, stores the sex (either 0 or 1 for male or female) of
+  // the set if this is specified for any member of a set (or their partners)
+  // in the def file
+  // (this value is temporary: its contents get put into <curSexConstraints>
+  // during processing)
+  vector< pair<set<Parent,ParentComp>,int8_t>* > spouseDependencies;
 
   bool warningGiven = false;
 
@@ -86,6 +96,13 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     }
 
     if (strcmp(token, "def") == 0) {
+      if (curBranchI1Sex != NULL) {
+	// do some bookkeeping to finalize the previously read pedigree
+	int lastNumGen = curNumGen;
+	finishLastDef(lastNumGen, curSexConstraints, curBranchI1Sex,
+		      spouseDependencies);
+      }
+      assert(curBranchI1Sex == NULL);
 
       /////////////////////////////////////////////////////////////////////////
       // parse new pedigree description
@@ -151,11 +168,12 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       curNumSampsToPrint = new int*[curNumGen];
       curNumBranches = new int[curNumGen];
       curBranchParents = new Parent*[curNumGen];
-      curSexConstraints = new int*[curNumGen];
+      curSexConstraints = new SexConstraint*[curNumGen];
+      curBranchI1Sex = new int*[curNumGen];
       curBranchNumSpouses = new int*[curNumGen];
       if (curNumSampsToPrint == NULL || curNumBranches == NULL ||
 	  curBranchParents == NULL || curSexConstraints == NULL ||
-	  curBranchNumSpouses == NULL) {
+	  curBranchI1Sex == NULL || curBranchNumSpouses == NULL) {
 	printf("ERROR: out of memory");
 	exit(5);
       }
@@ -170,6 +188,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	curNumBranches[gen] = -1;
 	curBranchParents[gen] = NULL;
 	curSexConstraints[gen] = NULL;
+	curBranchI1Sex[gen] = NULL;
 	curBranchNumSpouses[gen] = NULL;
       }
       simDetails.emplace_back(curNumFam, curNumGen, curNumSampsToPrint,
@@ -310,8 +329,11 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     }
 
     curNumSampsToPrint[generation - 1] = new int[thisGenNumBranches];
-    for(int b = 0; b < thisGenNumBranches; b++)
+    curBranchI1Sex[generation - 1] = new int[thisGenNumBranches];
+    for(int b = 0; b < thisGenNumBranches; b++) {
       curNumSampsToPrint[generation - 1][b] = numSamps;
+      curBranchI1Sex[generation - 1][b] = -1;
+    }
 
     lastReadGen = generation - 1;
 
@@ -323,6 +345,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 			&curBranchParents[generation - 1],
 			curNumSampsToPrint[generation - 1],
 			/*curGen=*/generation - 1, curSexConstraints,
+			curBranchI1Sex,
 			/*prevSpouseNum=*/&curBranchNumSpouses[generation - 2],
 			branchParentsAssigned, spouseDependencies, curI1Sex,
 			delim, saveptr, endptr, line);
@@ -334,6 +357,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 				    curNumSampsToPrint[generation - 1],
 				    /*curGen=*/generation - 1,
 				    /*sexConstraints=NA=*/NULL,
+				    curBranchI1Sex,
 				    /*prevGenSpouseNum=NA=*/NULL,
 				    branchParentsAssigned, spouseDependencies,
 				    curI1Sex, delim, saveptr, endptr, line);
@@ -341,6 +365,10 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     }
   }
 
+  // do some bookkeeping to finalize the previously read pedigree
+  int lastNumGen = curNumGen;
+  finishLastDef(lastNumGen, curSexConstraints, curBranchI1Sex,
+		spouseDependencies);
 
   for(auto it = simDetails.begin(); it != simDetails.end(); it++) {
     bool someBranchToPrint = false;
@@ -376,14 +404,46 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
   free(buffer);
   fclose(in);
 
-  // don't need the spouse dependency sets anymore:
-  for(unsigned int i = 0; i < spouseDependencies.size(); i++)
-    if (spouseDependencies[i] != NULL)
-      delete spouseDependencies[i];
-
-
   if (warningGiven)
     fprintf(stderr, "\n");
+}
+
+void finishLastDef(int numGen, SexConstraint **&sexConstraints,
+		   int **&branchI1Sex,
+		   vector< pair<set<Parent,ParentComp>,int8_t>* > &spouseDependencies) {
+  // i1 sexes from the most recently read pedigree should be deleted
+  for(int i = 0; i < numGen; i++)
+    if (branchI1Sex[i] != NULL)
+      delete [] branchI1Sex[i];
+  delete [] branchI1Sex;
+  branchI1Sex = NULL;
+
+  // need to assign sex from spouse dependency sets to <sexConstraints>; also
+  // don't need to store the spouse dependency sets anymore:
+  for(unsigned int i = 0; i < spouseDependencies.size(); i++) {
+    if (spouseDependencies[i] != NULL) {
+      int8_t theSex = spouseDependencies[i]->second;
+      if (theSex >= 0) {
+	// assign the sexes of all samples in the spouseDependencies set to
+	// <theSex>
+	set<Parent,ParentComp> &toUpdate = spouseDependencies[i]->first;
+	for(auto it = toUpdate.begin(); it != toUpdate.end(); it++) {
+	  assert(sexConstraints[ it->gen ][ it->branch ].theSex == -1 ||
+		 sexConstraints[ it->gen ][ it->branch ].theSex == theSex);
+	  sexConstraints[ it->gen ][ it->branch ].theSex = theSex;
+	}
+      }
+      delete spouseDependencies[i];
+      spouseDependencies[i] = NULL;
+    }
+  }
+  // TODO: can speed things by doing this, though note that it means that the
+  // results for a given random seed will differ relative to an earlier version
+  // of Ped-sim; therefore, will not do this, but may combine it with another
+  // feature that has this effect
+  // (Also, if this gets put in place, can remove the assignment of NULL just
+  // above.)
+  //spouseDependencies.clear();
 }
 
 // Gives the default parent assignment for any branches that have not had
@@ -453,9 +513,9 @@ void assignDefaultBranchParents(int prevGenNumBranches, int thisGenNumBranches,
 // Returns true iff a warning has been printed
 bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		    int *thisGenNumSampsToPrint, int curGen,
-		    int **sexConstraints, int **prevGenSpouseNum,
-		    vector<bool> &branchParentsAssigned,
-		    vector< set<Parent,ParentComp>* > &spouseDependencies,
+		    SexConstraint **sexConstraints, int **branchI1Sex,
+		    int **prevGenSpouseNum, vector<bool> &branchParentsAssigned,
+		    vector< pair<set<Parent,ParentComp>,int8_t>* > &spouseDependencies,
 		    const int i1Sex, const char *delim, char *&saveptr,
 		    char *&endptr, int line) {
   bool warningGiven = false;
@@ -483,13 +543,18 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
       exit(5);
     }
 
-    sexConstraints[prevGen] = new int[numBranches[prevGen]];
+    sexConstraints[prevGen] = new SexConstraint[numBranches[prevGen]];
     if (sexConstraints[prevGen] == NULL) {
       printf("ERROR: out of memory\n");
       exit(5);
     }
-    for(int i = 0; i < numBranches[prevGen]; i++)
-      sexConstraints[prevGen][i] = -1;
+    for(int i = 0; i < numBranches[prevGen]; i++) {
+      sexConstraints[prevGen][i].set = -1;
+      if (branchI1Sex[prevGen] != NULL)
+	sexConstraints[prevGen][i].theSex = branchI1Sex[prevGen][i];
+      else
+	sexConstraints[prevGen][i].theSex = -1;
+    }
 
     // so far, all the branches in the current generation are assigned default
     // parents; track which branches get explicitly assigned and throw an error
@@ -505,18 +570,23 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
     int i;
     Parent pars[2];
 
-    // split on ':' to get the parent assignments on the right and the
-    // branches on the left
+    // split on ':', 'n', or 's' to get the parent assignments/sexes on the
+    // right and the branches on the left
     for(i = 0; assignToken[i] != ':' && assignToken[i] != 'n' &&
-	       assignToken[i] != '\0'; i++);
-    // ':' gives parents (after the ':') and n means the preceeding branches
-    // should not have their members printed
+	       assignToken[i] != 's' && assignToken[i] != '\0'; i++);
+    // ':' gives parents (after the ':'); n means the preceding branches
+    // should not have their members printed; s means the following character
+    // ('M' or 'F') gives the sex of the i1 individual in the branches
     bool parentAssign = false;
     bool noPrint = false;
+    bool sexAssign = false;
+    int sexToAssign = -1;
     if (assignToken[i] == ':')
       parentAssign = true;
     else if (assignToken[i] == 'n')
       noPrint = true;
+    else if (assignToken[i] == 's')
+      sexAssign = true;
     else {
       fprintf(stderr, "ERROR: line %d in def: improperly formatted parent assignment or no-print\n",
 	      line);
@@ -531,7 +601,20 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
       exit(8);
     }
 
-    if (noPrint) {
+    // should have only one of these options:
+    assert(parentAssign || noPrint || sexAssign);
+
+    if (parentAssign) {
+      // Get the one or two parents
+      char *assignPar[2];
+      assignPar[0] = &(assignToken[i+1]); // will add '\0' at '_' if present
+      assignPar[1] = NULL; // initially; updated just below
+
+      readParents(numBranches, prevGen, sexConstraints, branchI1Sex,
+		  prevGenSpouseNum, spouseDependencies, assignBranches,
+		  assignPar, pars, fullAssignPar, i1Sex, endptr, line);
+    }
+    else if (noPrint) {
       // expect a space after the 'n': check this
       if (assignToken[i+1] != '\0') {
 	assignToken[i] = 'n';
@@ -541,24 +624,31 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 	exit(8);
       }
     }
-    if (parentAssign) {
-      // Get the one or two parents
-      char *assignPar[2];
-      assignPar[0] = &(assignToken[i+1]); // will add '\0' at '_' if present
-      assignPar[1] = NULL; // initially; updated just below
+    else {
+      bool badField = false;
+      if (assignToken[i+1] == 'M')
+	sexToAssign = 0;
+      else if (assignToken[i+1] == 'F')
+	sexToAssign = 1;
+      else
+	badField = true;
 
-      readParents(numBranches, prevGen, sexConstraints, prevGenSpouseNum,
-		  spouseDependencies, assignBranches, assignPar, pars,
-		  fullAssignPar, i1Sex, endptr, line);
+      if (badField || assignToken[i+2] != '\0') {
+	assignToken[i] = 's';
+	fprintf(stderr, "ERROR: line %d in def: improperly formatted sex assignment field \"%s\":\n",
+		line, assignToken);
+	fprintf(stderr, "       character 's' should be followed either 'M' or 'F' and then white space\n");
+	exit(10);
+      }
     }
 
-
-    // one should be true, not both:
-    assert((parentAssign || noPrint) && !(parentAssign && noPrint));
+    // either we're not assigning a sex or <sexToAssign> is 0 or 1:
+    assert(!sexAssign || sexToAssign == 0 || sexToAssign == 1);
 
     // process the branches
     // if <parentAssign>, these will be assigned <pars> as parent OR
-    // if <noPrint>, these will not be printed
+    // if <noPrint>, these will not be printed OR
+    // if <sexAssign>, these will be assigned <sexToAssign> as their sex
     bool done = false;
     // the starting branch for a range (delimited by '-'); see below
     char *startBranch = NULL;
@@ -590,8 +680,11 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		  line, assignBranches);
 	  if (parentAssign)
 	    fprintf(stderr, "assign parent %s to\n", fullAssignPar);
-	  else // no print
+	  else if (noPrint)
 	    fprintf(stderr, "set as no-print\n");
+	  else // sexAssign
+	    fprintf(stderr, "assign sex %c to\n",
+		    (sexToAssign == 0) ? 'M' : 'F');
 	  if (errno != 0)
 	    perror("strtol");
 	  exit(2);
@@ -605,8 +698,11 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		    line, startBranch);
 	    if (parentAssign)
 	      fprintf(stderr, "assign parent %s to\n", fullAssignPar);
-	    else // no print
+	    else if (noPrint)
 	      fprintf(stderr, "set as no-print\n");
+	    else // sexAssign
+	      fprintf(stderr, "assign sex %c to\n",
+		      (sexToAssign == 0) ? 'M' : 'F');
 	    if (errno != 0)
 	      perror("strtol");
 	    exit(2);
@@ -618,63 +714,26 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		    line, rangeStart, rangeEnd);
 	    if (parentAssign)
 	      fprintf(stderr, "       assign parent %s to\n", fullAssignPar);
-	    else // no print
+	    else if (noPrint)
 	      fprintf(stderr, "       set as no-print\n");
+	    else // sexAssign
+	      fprintf(stderr, "       assign sex %c to\n",
+		      (sexToAssign == 0) ? 'M' : 'F');
 	    exit(8);
 	  }
 
 	  for(int branch = rangeStart; branch <= rangeEnd; branch++) {
-	    if (parentAssign) {
-	      if (branchParentsAssigned[branch]) {
-		fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
-			line, branch+1);
-		exit(8);
-	      }
-	      branchParentsAssigned[branch] = true;
-	      for(int p = 0; p < 2; p++)
-		(*thisGenBranchParents)[branch*2 + p] = pars[p];
-	    }
-	    else { // no print
-	      // print 0 samples for <branch>
-	      if (thisGenNumSampsToPrint[branch] > 1) {
-		fprintf(stderr, "Warning: line %d in def: generation %d would print %d individuals, now set to 0\n",
-			line, curGen + 1, thisGenNumSampsToPrint[branch]);
-		warningGiven = true;
-	      }
-	      else if (thisGenNumSampsToPrint[branch] == 0) {
-		fprintf(stderr, "Warning: line %d in def: generation %d branch %d, no-print is redundant\n",
-			line, curGen + 1, branch + 1);
-		warningGiven = true;
-	      }
-	      thisGenNumSampsToPrint[branch] = 0;
-	    }
+	    assignBranch(parentAssign, noPrint, sexToAssign, curGen, branch,
+			 thisGenBranchParents, thisGenNumSampsToPrint,
+			 branchI1Sex, branchParentsAssigned, pars, line,
+			 warningGiven);
 	  }
 	}
 	else {
-	  if (parentAssign) {
-	    if (branchParentsAssigned[curBranch]) {
-	      fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
-		      line, curBranch + 1);
-	      exit(8);
-	    }
-	    branchParentsAssigned[curBranch] = true;
-	    for(int p = 0; p < 2; p++)
-	      (*thisGenBranchParents)[curBranch*2 + p] = pars[p];
-	  }
-	  else { // no print
-	    // print 0 samples for <curBranch>
-	    if (thisGenNumSampsToPrint[curBranch] > 1) {
-	      fprintf(stderr, "Warning: line %d in def: generation %d would print %d individuals, now set to 0\n",
-		      line, curGen + 1, thisGenNumSampsToPrint[curBranch]);
-	      warningGiven = true;
-	    }
-	    else if (thisGenNumSampsToPrint[curBranch] == 0) {
-	      fprintf(stderr, "Warning: line %d in def: generation %d branch %d, no-print is redundant\n",
-		      line, curGen + 1, curBranch + 1);
-	      warningGiven = true;
-	    }
-	    thisGenNumSampsToPrint[curBranch] = 0;
-	  }
+	  assignBranch(parentAssign, noPrint, sexToAssign, curGen, curBranch,
+		       thisGenBranchParents, thisGenNumSampsToPrint,
+		       branchI1Sex, branchParentsAssigned, pars, line,
+		       warningGiven);
 	}
 
 	assignBranches = &(assignBranches[i+1]); // go through next in loop
@@ -685,8 +744,10 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
       fprintf(stderr, "ERROR: line %d in def: range of branches ", line);
       if (parentAssign)
 	fprintf(stderr, "to assign parents ");
-      else // no print
+      else if (noPrint)
 	fprintf(stderr, "set as no-print ");
+      else // sexAssign
+	fprintf(stderr, "assign sex %c to\n", (sexToAssign == 0) ? 'M' : 'F');
       fprintf(stderr, "does not terminate\n");
       exit(8);
     }
@@ -706,10 +767,49 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
   return warningGiven;
 }
 
+void assignBranch(bool parentAssign, bool noPrint, int sexToAssign, int curGen,
+		  int branch, Parent **thisGenBranchParents,
+		  int *thisGenNumSampsToPrint, int **branchI1Sex,
+		  vector<bool> &branchParentsAssigned, Parent pars[2], int line,
+		  bool &warningGiven) {
+  if (parentAssign) {
+    if (branchParentsAssigned[branch]) {
+      fprintf(stderr, "ERROR: line %d in def: parents of branch number %d assigned multiple times\n",
+	      line, branch+1);
+      exit(8);
+    }
+    branchParentsAssigned[branch] = true;
+    for(int p = 0; p < 2; p++)
+      (*thisGenBranchParents)[branch*2 + p] = pars[p];
+  }
+  else if (noPrint) {
+    // print 0 samples for <branch>
+    if (thisGenNumSampsToPrint[branch] > 1) {
+      fprintf(stderr, "Warning: line %d in def: generation %d would print %d individuals, now set to 0\n",
+	      line, curGen + 1, thisGenNumSampsToPrint[branch]);
+      warningGiven = true;
+    }
+    else if (thisGenNumSampsToPrint[branch] == 0) {
+      fprintf(stderr, "Warning: line %d in def: generation %d branch %d, no-print is redundant\n",
+	      line, curGen + 1, branch + 1);
+      warningGiven = true;
+    }
+    thisGenNumSampsToPrint[branch] = 0;
+  }
+  else { // sexAssign
+    if (branchI1Sex[curGen][branch] != -1) {
+      fprintf(stderr, "ERROR: line %d in def: sex of branch number %d assigned multiple times\n",
+	      line, branch+1);
+      exit(8);
+    }
+    branchI1Sex[curGen][branch] = sexToAssign;
+  }
+}
+
 // In the branch specifications, read the parent assignments
-void readParents(int *numBranches, int prevGen, int **sexConstraints,
-		 int **prevGenSpouseNum,
-		 vector< set<Parent,ParentComp>* > &spouseDependencies,
+void readParents(int *numBranches, int prevGen, SexConstraint **sexConstraints,
+		 int **branchI1Sex, int **prevGenSpouseNum,
+		 vector< pair<set<Parent,ParentComp>,int8_t>* > &spouseDependencies,
 		 char *assignBranches, char *assignPar[2], Parent pars[2],
 		 char *&fullAssignPar, const int i1Sex, char *&endptr,
 		 int line) {
@@ -817,9 +917,10 @@ void readParents(int *numBranches, int prevGen, int **sexConstraints,
       fprintf(stderr, "ERROR: line %d in def: cannot have fixed sex for i1 samples and marriages\n",
 	      line);
       fprintf(stderr, "       between branches -- i1's will have the same sex and cannot reproduce\n");
+      fprintf(stderr, "       consider assigning sexes to individual branches\n");
       exit(9);
     }
-    updateSexConstraints(sexConstraints, pars, numBranches,
+    updateSexConstraints(sexConstraints, branchI1Sex, pars, numBranches,
 			 spouseDependencies, line);
   }
 
@@ -832,9 +933,13 @@ void readParents(int *numBranches, int prevGen, int **sexConstraints,
 // Given the branch indexes of two parents, adds constraints and error checks
 // to ensure that this couple does not violate the requirement that parents
 // must have opposite sex.
-void updateSexConstraints(int **sexConstraints, Parent pars[2],
-			  int *numBranches,
-			  vector< set<Parent,ParentComp>* > &spouseDependencies,
+// Also stores (in <spouseDependencies>) the specified or inferred sexes of the
+// branches as based on the specifications in the def file and passed in via
+// <branchI1Sex>.
+void updateSexConstraints(SexConstraint **sexConstraints, int **branchI1Sex,
+			  Parent pars[2], int *numBranches,
+			  vector< pair< set<Parent,ParentComp>, int8_t>* >
+							    &spouseDependencies,
 			  int line) {
   // we check these things in the caller, but just to be sure:
   for(int p = 0; p < 2; p++) {
@@ -842,76 +947,124 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
     assert(pars[p].branch < numBranches[ pars[p].gen ]);
   }
 
-  if (sexConstraints[ pars[0].gen ][ pars[0].branch ] == -1 &&
-      sexConstraints[ pars[1].gen ][ pars[1].branch ] == -1) {
+  if (sexConstraints[ pars[0].gen ][ pars[0].branch ].set == -1 &&
+      sexConstraints[ pars[1].gen ][ pars[1].branch ].set == -1) {
     // neither is a member of a spouse set: create and add to
     // <spouseDependencies>
-    set<Parent,ParentComp> *sets[2];
+    pair<set<Parent,ParentComp>,int8_t> *sets[2];
     for(int p = 0; p < 2; p++) {
-      sets[p] = new set<Parent,ParentComp>();
+      sets[p] = new pair<set<Parent,ParentComp>,int8_t>();
       if (sets[p] == NULL) {
 	printf("ERROR: out of memory");
 	exit(5);
       }
-      sets[p]->insert( pars[p] );
+      sets[p]->first.insert( pars[p] );
       // which index in spouseDependencies is the set corresponding to this
-      // parent stored in? As we're about to add it, just below this, the
+      // parent stored in? As we're about to add it just below this, the
       // current size will be the index
-      sexConstraints[pars[p].gen][pars[p].branch] = spouseDependencies.size();
+      sexConstraints[ pars[p].gen ][ pars[p].branch ].set =
+						      spouseDependencies.size();
+      if (branchI1Sex[ pars[p].gen ] != NULL &&
+	  branchI1Sex[ pars[p].gen ][ pars[p].branch ] != -1)
+	sets[p]->second = branchI1Sex[ pars[p].gen ][ pars[p].branch ];
+      else
+	sets[p]->second = -1;
       spouseDependencies.push_back( sets[p] );
     }
+
+    // any assigned sexes? ensure consistency:
+    if (sets[0]->second >= 0 || sets[1]->second >= 0) {
+      for(int p = 0; p < 2; p++)
+	if (sets[p]->second < 0)
+	  // infer sex that is unassigned: is opposite (^ 1) the assigned one
+	  sets[p]->second = sets[ p^1 ]->second ^ 1;
+      if (sets[0]->second != (sets[1]->second ^ 1)) {
+	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d and branch %d from\n",
+		line, pars[0].branch+1, pars[0].gen+1, pars[1].branch+1);
+	fprintf(stderr, "       generation %d as parents is impossible: they are assigned the same sex\n",
+		pars[1].gen+1);
+	exit(3);
+      }
+    }
   }
-  else if (sexConstraints[ pars[0].gen ][ pars[0].branch ] == -1 ||
-	   sexConstraints[ pars[1].gen ][ pars[1].branch ] == -1) {
+  else if (sexConstraints[ pars[0].gen ][ pars[0].branch ].set == -1 ||
+	   sexConstraints[ pars[1].gen ][ pars[1].branch ].set == -1) {
     // one spouse is a member of a spouse set and the other is not: add the
     // other parent to the opposite spouse set, error check, and update state
     int assignedPar = -1;
-    if (sexConstraints[ pars[0].gen ][ pars[0].branch ] >= 0)
+    if (sexConstraints[ pars[0].gen ][ pars[0].branch ].set >= 0)
       assignedPar = 0;
     else
       assignedPar = 1;
 
     int otherPar = assignedPar ^ 1;
     int assignedSetIdx = sexConstraints[ pars[assignedPar].gen ]
-						  [ pars[assignedPar].branch ];
+				       [ pars[assignedPar].branch ].set;
 
     // since <otherPar> isn't in a spouse set yet, it definitely shouldn't be in
     // the same spouse set as <assignedPar>
     assert((unsigned int) assignedSetIdx < spouseDependencies.size());
     assert(spouseDependencies[ assignedSetIdx ] != NULL);
-    assert(spouseDependencies[ assignedSetIdx ]->find( pars[otherPar] ) ==
-				    spouseDependencies[assignedSetIdx]->end());
+    assert(spouseDependencies[ assignedSetIdx ]->first.find( pars[otherPar] ) ==
+			      spouseDependencies[assignedSetIdx]->first.end());
 
     // NOTE: The following is a trick that relies on the fact that sets are
     // stored as sequential pairs in <spouseDependencies>. Ex: indexes 0 and 1
     // are pairs of spouses that are dependent upon each other (those in index
-    // 0 must have the same sex and must be opposite those in index 1).  To get
+    // 0 must have the same sex and must be opposite those in index 1). To get
     // an even number that is 1 minus an odd value or the odd number that is 1
     // plus an even value, it suffices to flip the lowest order bit:
     int otherSetIdx = assignedSetIdx ^ 1;
     // add <pars[otherPar]> to the set containing spouses of <pars[assignedPar]>
-    spouseDependencies[ otherSetIdx ]->insert( pars[otherPar] );
-    sexConstraints[ pars[otherPar].gen ][ pars[otherPar].branch ] = otherSetIdx;
+    spouseDependencies[ otherSetIdx ]->first.insert( pars[otherPar] );
+    sexConstraints[ pars[otherPar].gen ][ pars[otherPar].branch ].set
+								  = otherSetIdx;
+    // is the "new" spouse assigned a sex? If not, no change needed: that
+    // person can have sex assigned according to the current constraints, but
+    // if so, error check and, if needed, update
+    if (branchI1Sex[ pars[otherPar].gen ][ pars[otherPar].branch ] >= 0) {
+      if (spouseDependencies[ otherSetIdx ]->second == -1) {
+	// sex not yet assigned in <spouseDependencies>; ensure that that's
+	// true of both the "linked" dependency sets:
+	assert(spouseDependencies[ assignedSetIdx ]->second == -1);
+
+	// no sexes assigned yet; assign:
+	spouseDependencies[ otherSetIdx ]->second =
+		    branchI1Sex[ pars[otherPar].gen ][ pars[otherPar].branch ];
+	spouseDependencies[ assignedSetIdx ]->second =
+				(spouseDependencies[ otherSetIdx ]->second ^ 1);
+      }
+      else if (spouseDependencies[ otherSetIdx ]->second !=
+		  branchI1Sex[ pars[otherPar].gen ][ pars[otherPar].branch ]) {
+	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d as a parent with\n",
+		line, pars[otherPar].branch+1, pars[otherPar].gen+1);
+	fprintf(stderr, "       branch %d from generation %d is impossible: due to sex assignments and/or\n",
+		pars[assignedPar].branch+1, pars[assignedPar].gen+1);
+	fprintf(stderr, "       other parent assignments they necessarily have the same sex\n");
+	exit(4);
+      }
+      // else: the current assigned sex for <otherSetIdx> is the same as the
+      // spouse
+    }
   }
   else {
-    assert(sexConstraints[ pars[0].gen ][ pars[0].branch ] >= 0 &&
-			  sexConstraints[ pars[1].gen ][ pars[1].branch ] >= 0);
+    assert(sexConstraints[ pars[0].gen ][ pars[0].branch ].set >= 0 &&
+	   sexConstraints[ pars[1].gen ][ pars[1].branch ].set >= 0);
     // both are members of spouse sets
 
-    if (sexConstraints[ pars[0].gen ][ pars[0].branch ] / 2 ==
-			  sexConstraints[ pars[1].gen ][ pars[1].branch ] / 2) {
+    if (sexConstraints[ pars[0].gen ][ pars[0].branch ].set / 2 ==
+	sexConstraints[ pars[1].gen ][ pars[1].branch ].set / 2) {
       // spouse sets from the same pair of sets
-      if (sexConstraints[ pars[0].gen ][ pars[0].branch ] ==
-			      sexConstraints[ pars[1].gen ][ pars[1].branch ]) {
+      if (sexConstraints[ pars[0].gen ][ pars[0].branch ].set ==
+	  sexConstraints[ pars[1].gen ][ pars[1].branch ].set) {
 	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d and branch %d from\n",
 		line, pars[0].branch+1, pars[0].gen+1, pars[1].branch+1);
 	fprintf(stderr, "       generation %d as parents is impossible due to other parent assignments:\n",
 		pars[1].gen+1);
 	fprintf(stderr, "       they necessarily have same sex\n");
-	exit(3);
+	exit(5);
       }
-      // otherwise done: are already members of sets that are pairs and
-      // therefore will be constrained to be opposite
+      // otherwise done with set assignment
     }
     else {
       // two distinct sets of spouse sets: must generate two sets that are the
@@ -919,7 +1072,8 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
       // constrained to be opposite sex
       int setIdxes[2][2]; // current set indexes
       for(int p = 0; p < 2; p++) {
-	setIdxes[p][0] = sexConstraints[ pars[p].gen ][ pars[p].branch ];
+	setIdxes[p][0] = sexConstraints[ pars[p].gen ]
+				       [ pars[p].branch ].set;
 	// see comment denoted with NOTE a little ways above for why this works:
 	setIdxes[p][1] = setIdxes[p][0] ^ 1;
       }
@@ -927,6 +1081,40 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
       for(int i = 0; i < 2; i++)
 	for(int j = 0; j < 2; j++)
 	  assert(spouseDependencies[ setIdxes[i][j] ] != NULL);
+
+      // check/ensure that the sets to be unioned have consistent sexes (if
+      // assigned). We will union into setIdxes[0][*], so loop over the second
+      // index (the merge parent index)
+      for(int mp = 0; mp < 2; mp++) { // loop over merged p index
+	int op = mp ^ 1; // other p
+	if (spouseDependencies[ setIdxes[0][mp] ]->second !=
+	    spouseDependencies[ setIdxes[1][op] ]->second) {
+	  if (spouseDependencies[ setIdxes[0][mp] ]->second == -1)
+	    // set to be unioned into doesn't have a sex assigned; set to the
+	    // same as the other parent:
+	    spouseDependencies[ setIdxes[0][mp] ]->second =
+				  spouseDependencies[ setIdxes[1][op] ]->second;
+	  else if (spouseDependencies[ setIdxes[1][op] ]->second != -1) {
+	    // the sexes of the two sets to be merged are different; error
+	    fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d as a parent with\n",
+		    line, pars[0].branch+1, pars[0].gen+1);
+	    fprintf(stderr, "       branch %d from generation %d is impossible: due to sex assignments and/or\n",
+		    pars[1].branch+1, pars[1].gen+1);
+	    fprintf(stderr, "       other parent assignments they necessarily have the same sex\n");
+	    exit(6);
+	  }
+	}
+      }
+      // sanity check that the end result is either opposite sex assignments or
+      // no sex assignments
+      if (spouseDependencies[ setIdxes[0][0] ]->second != -1)
+	assert(spouseDependencies[ setIdxes[0][0] ]->second == 
+			    (spouseDependencies[ setIdxes[0][1] ]->second ^ 1));
+      else {
+	assert(spouseDependencies[ setIdxes[0][1] ]->second == -1);
+	assert(spouseDependencies[ setIdxes[1][0] ]->second == -1);
+	assert(spouseDependencies[ setIdxes[1][1] ]->second == -1);
+      }
 
       // This is legacy code, but I'll keep it anyway:
       // ensure the values are different pointers (old code used to update
@@ -938,24 +1126,26 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
 					  spouseDependencies[ setIdxes[1][0] ]);
 
       // take the union such that spouses of each are contained in both
-      spouseDependencies[ setIdxes[0][0] ]->insert(
-				  spouseDependencies[ setIdxes[1][1] ]->begin(),
-				  spouseDependencies[ setIdxes[1][1] ]->end());
-      spouseDependencies[ setIdxes[0][1] ]->insert(
-				  spouseDependencies[ setIdxes[1][0] ]->begin(),
-				  spouseDependencies[ setIdxes[1][0] ]->end());
+      spouseDependencies[ setIdxes[0][0] ]->first.insert(
+			    spouseDependencies[ setIdxes[1][1] ]->first.begin(),
+			    spouseDependencies[ setIdxes[1][1] ]->first.end());
+      spouseDependencies[ setIdxes[0][1] ]->first.insert(
+			    spouseDependencies[ setIdxes[1][0] ]->first.begin(),
+			    spouseDependencies[ setIdxes[1][0] ]->first.end());
 
       // intersection of these should be empty, otherwise there's
       // inconsistencies and individuals that are meant to be different sexes
       // simultaneously
-      if (intersectNonEmpty(*spouseDependencies[ setIdxes[0][0] ],
-			    *spouseDependencies[ setIdxes[0][1] ])) {
+      // seems like this is impossible, so arguably should be an assertion, but
+      // we'll keep the informative error in:
+      if (intersectNonEmpty(spouseDependencies[ setIdxes[0][0] ]->first,
+			    spouseDependencies[ setIdxes[0][1] ]->first)) {
 	fprintf(stderr, "ERROR: line %d in def: assigning branch %d from generation %d and branch %d from\n",
 		line, pars[0].branch+1, pars[0].gen+1, pars[1].branch+1);
 	fprintf(stderr, "       generation %d as parents is impossible due to other parent assignments:\n",
 		pars[1].gen+1);
 	fprintf(stderr, "       they necessarily have same sex\n");
-	exit(4);
+	exit(7);
       }
 
       // replace set values stored in sexConstraints to the newly merged set
@@ -963,14 +1153,25 @@ void updateSexConstraints(int **sexConstraints, Parent pars[2],
       for(int p = 0; p < 2; p++) {
 	// update all set indexes for samples in
 	// <spouseDependencies[ setIdxes[1][p] ]> to setIdxes[0][ p^1 ];
-	set<Parent,ParentComp> *toUpdate = spouseDependencies[ setIdxes[1][p] ];
-	for(auto it = toUpdate->begin(); it != toUpdate->end(); it++)
-	  sexConstraints[ it->gen ][ it->branch ] = setIdxes[0][p^1];
+	set<Parent,ParentComp> &toUpdate =
+				    spouseDependencies[ setIdxes[1][p] ]->first;
+	for(auto it = toUpdate.begin(); it != toUpdate.end(); it++)
+	  sexConstraints[ it->gen ][ it->branch ].set = setIdxes[0][p^1];
 
-	delete toUpdate;
+	delete spouseDependencies[ setIdxes[1][p] ];
 	spouseDependencies[ setIdxes[1][p] ] = NULL;
       }
     }
+  }
+
+  // the sexes of these branches (if assigned) should now be set in
+  // <spouseDependencies>
+  for(int p = 0; p < 2; p++) {
+    int assignedSetIdx = sexConstraints[ pars[p].gen ][ pars[p].branch ].set;
+    assert(branchI1Sex[ pars[p].gen ] == NULL ||
+	   branchI1Sex[ pars[p].gen ][ pars[p].branch ] == -1 ||
+	   spouseDependencies[ assignedSetIdx ]->second ==
+				  branchI1Sex[ pars[p].gen ][ pars[p].branch ]);
   }
 }
 

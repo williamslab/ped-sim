@@ -66,7 +66,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
-    int **sexConstraints = simDetails[ped].sexConstraints;
+    SexConstraint **sexConstraints = simDetails[ped].sexConstraints;
     int i1Sex = simDetails[ped].i1Sex;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
@@ -122,21 +122,25 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
 	  if (sexSpecificMaps) {
 	    int branchAssign;
-	    if (i1Sex >= 0)
+	    if (sexConstraints[curGen] != NULL &&
+				    sexConstraints[curGen][branch].theSex >= 0)
+	      branchAssign = sexConstraints[curGen][branch].theSex;
+	    else if (i1Sex >= 0)
 	      branchAssign = i1Sex;
 	    else if (sexConstraints[curGen] == NULL ||
-					sexConstraints[curGen][branch] == -1) {
+				    sexConstraints[curGen][branch].set == -1) {
 	      // no dependencies, just pick randomly
 	      branchAssign = coinFlip(randomGen);
 	    }
 	    else {
-	      while (sexConstraints[curGen][branch] >=
+	      while (sexConstraints[curGen][branch].set >=
 						  (int) sexAssignments.size()) {
 		int rand = coinFlip(randomGen);
 		sexAssignments.push_back(rand);
 		sexAssignments.push_back(rand ^ 1);
 	      }
-	      branchAssign = sexAssignments[ sexConstraints[curGen][branch] ];
+	      branchAssign =
+			  sexAssignments[ sexConstraints[curGen][branch].set ];
 	    }
 	    // How many spouses for this branch?
 	    int thisBranchNumSpouses;

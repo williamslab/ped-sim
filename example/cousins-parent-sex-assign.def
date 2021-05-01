@@ -1,0 +1,14 @@
+# First cousins through two brothers
+def bro-1cousin 10 3
+2 0 2  1sM  2sM
+3 1
+
+# First cousins through two sisters
+def sis-1cousin 10 3
+2 0 2  1sF  2sF
+3 1
+
+# First cousins through a sister and brother
+def sis_bro-1cousin 10 3
+2 0 2  1sF  2sM
+3 1

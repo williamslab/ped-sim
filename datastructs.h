@@ -29,11 +29,32 @@ struct ParentComp {
   }
 };
 
+struct SexConstraint {
+  // when two branches are to have children together, each is assigned a
+  // constraint set index. This index may be shared with an arbitrary number
+  // of branches (technically, the i1 individual of those branches) if one or
+  // both members of a couple have children with other branches. (And this
+  // propagates if those other individuals have children with still other
+  // branches.)
+  // The constraints are always assigned in pairs, with the first index (even
+  // number) being of one sex, and the next index (odd number) being the
+  // being the opposite sex.
+  int set;
+  // if any member of a constraint set is assigned a sex, all members must
+  // have that sex assigned, and the linked constraint set will have the
+  // opposite sex.
+  // If there are no sexes assigned, this value will be -1 and the sexes will
+  // be assigned randomly, but with all members of a constraint set having
+  // the same sex, and the linked constraint set having the opposite sex
+  int8_t theSex;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
   SimDetails(int nFam, int nGen, int **print, int *branches, Parent **parents,
-	     int **sexes, int i1FixedSex, int **spouses, char *theName) {
+	     SexConstraint **sexes, int i1FixedSex, int **spouses,
+	     char *theName) {
     numFam = nFam;
     numGen = nGen;
     numSampsToPrint = print;
@@ -77,7 +98,7 @@ struct SimDetails {
   int **numSampsToPrint;
   int *numBranches;
   Parent **branchParents;
-  int **sexConstraints;
+  SexConstraint **sexConstraints;
   int i1Sex;
   int **branchNumSpouses;
   char *name;
