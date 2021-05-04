@@ -207,6 +207,10 @@ int main(int argc, char **argv) {
   char *mrcaFile = NULL;
   if (CmdLineOpts::printMRCA) {
     mrcaFile = new char[outFileLen];
+    if (mrcaFile == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
     sprintf(mrcaFile, "%s.mrca", CmdLineOpts::outPrefix);
   }
   locatePrintIBD(simDetails, hapCarriers, map, sexSpecificMaps,

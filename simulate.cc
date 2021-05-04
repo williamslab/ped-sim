@@ -188,6 +188,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 				     1 + (branch + 1) / 10 +
 				     1 + (ind + 1) / 10;
 		  char *idSuffix = new char[ idLength ];
+		  if (idSuffix == NULL) {
+		    printf("ERROR: out of memory\n");
+		    exit(5);
+		  }
 		  if (ind < branchNumSpouses)
 		    sprintf(idSuffix, "g%d-b%d-s%d", curGen + 1, branch + 1,
 			    ind + 1);

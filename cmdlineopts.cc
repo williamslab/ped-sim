@@ -273,6 +273,10 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 
   if (chrX == NULL && haveGoodArgs) {
     chrX = new char[2];
+    if (chrX == NULL) {
+      printf("ERROR: out of memory");
+      exit(5);
+    }
     chrX[0] = 'X';
     chrX[1] = '\0';
   }
