@@ -131,7 +131,13 @@ int main(int argc, char **argv) {
   uint32_t sexesCountData[2] = { 0, 0 };
   bool haveXmap = map.haveXmap();
   if (CmdLineOpts::inVCFfile) {
-    if (!CmdLineOpts::vcfSexesFile && haveXmap) {
+    if (CmdLineOpts::vcfSexesFile && !haveXmap) {
+      for(int o = 0; o < 2; o++) {
+	fprintf(outs[o], "WARNING: input VCF supplied and a sexes file, but no X chromosome genetic map\n");
+	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
+      }
+    }
+    else if (!CmdLineOpts::vcfSexesFile && haveXmap) { // reverse of above
       for(int o = 0; o < 2; o++) {
 	fprintf(outs[o], "WARNING: input VCF supplied and an X chromosome genetic map, but no --sexes file\n");
 	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
