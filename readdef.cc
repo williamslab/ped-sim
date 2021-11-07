@@ -708,6 +708,12 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 		      (sexToAssign == 0) ? 'M' : 'F');
 	    exit(8);
 	  }
+	  if (rangeEnd >= numBranches[curGen]) {
+	    fprintf(stderr, "ERROR: line %d in def: request to assign a branch greater than %d, the total\n",
+		    line, numBranches[curGen]);
+	    fprintf(stderr, "       number of branches in generation %d\n", curGen + 1);
+	    exit(11);
+	  }
 
 	  for(int branch = rangeStart; branch <= rangeEnd; branch++) {
 	    assignBranch(parentAssign, noPrint, sexToAssign, curGen, branch,
@@ -717,6 +723,13 @@ bool readBranchSpec(int *numBranches, Parent **thisGenBranchParents,
 	  }
 	}
 	else {
+	  if (curBranch >= numBranches[curGen]) {
+	    fprintf(stderr, "ERROR: line %d in def: request to assign a branch greater than %d, the total\n",
+		    line, numBranches[curGen]);
+	    fprintf(stderr, "       number of branches in generation %d\n", curGen + 1);
+	    exit(11);
+	  }
+
 	  assignBranch(parentAssign, noPrint, sexToAssign, curGen, curBranch,
 		       sexConstraints, thisGenBranchParents,
 		       thisGenNumSampsToPrint, numBranches[curGen],
