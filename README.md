@@ -103,14 +103,22 @@ data and so does not produce any output genetic data.
 Compiling
 ---------
 
-Ped-sim requires the [boost](https://www.boost.org/) developmental libraries to
-be installed to compile. Most Linux/Unix-based users should simply be able to
-compile by running
+Ped-sim requires **either** the [boost](https://www.boost.org/) developmental
+libraries _or_ [GSL](https://www.gnu.org/software/gsl/) (see below regarding
+GSL). With one of these libraries in place (and an update to the Makefile for
+GSL), most Linux/Unix-based users should simply be able to compile by running
 
     make
 
 Other systems may require editing of the Makefile or alternate means of
 compiling.
+
+**GSL**: our analyses suggest that Ped-sim runs a bit faster with GSL (although
+the component that uses boost/GSL is quite fast regardless). Use the following
+to compile with the GSL library:
+
+    cp Makefile-gsl Makefile
+    make
 
 ------------------------------------------------------
 
