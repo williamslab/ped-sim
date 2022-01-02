@@ -36,7 +36,7 @@ $(EXEC): $(CPPOBJS) $(HEADERS)
 
 # for minimal dependencies on libraries:
 distribute: $(CPPOBJS) $(COBJS) $(HEADERS)
-	$(GPP) -o $(EXEC) $(CPPOBJS) $(COBJS) $(CFLAGS) $(LIBS) -static-libstdc++ -static-libgcc -Wl,--wrap=memcpy
+	$(GPP) -o $(EXEC) $(CPPOBJS) $(COBJS) $(CFLAGS) $(LIBS) -static-libstdc++ -static-libgcc
 
 
 # This way of building dependencies (per-file) described at
