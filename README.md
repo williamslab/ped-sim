@@ -7,6 +7,10 @@ sexes) when using such maps.
 Recent updates
 --------------
 
+Version 1.4 chooses alleles from the first haplotype if males are input with
+heterozygous genotypes. Formerly Ped-sim picked an allele at random, but this
+effectively introduces switch errors into the transmitted haplotypes.
+
 Version 1.3 now supports branch-specific sex assignments in the
 [def file](#def-file).
 
