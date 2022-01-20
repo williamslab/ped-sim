@@ -562,11 +562,17 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	}
 	else if (strcmp(alleles[0], alleles[1]) != 0) {
 	  if (!warnedHetMaleX) {
-	    for(int o = 0; o < 2; o++)
-	      fprintf(outs[o], "\nWARNING: heterozygous male X genotype found; will randomly pick an allele\n");
+	    for(int o = 0; o < 2; o++) {
+	      fprintf(outs[o], "\nWARNING: heterozygous male X genotype found\n");
+	      fprintf(outs[o], "         will pick allele from first haplotype\n");
+	    }
 	    warnedHetMaleX = true;
 	  }
-	  int keepHap = coinFlip(hetMaleXRandGen);
+	  // Picking a random allele creates switch errors; although males
+	  // shouldn't be heterozygous on the X, the haplotypes they have are
+	  // valid and Ped-sim should not switch between them willy nilly.
+	  //int keepHap = coinFlip(hetMaleXRandGen);
+	  int keepHap = 0;
 	  alleles[ 1 ^ keepHap ] = alleles[keepHap];
 	}
       }
