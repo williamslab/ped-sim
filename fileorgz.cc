@@ -97,9 +97,10 @@ int FileOrGZ<FILE *>::printf(const char *format, ...) {
 template<>
 int FileOrGZ<gzFile>::printf(const char *format, ...) {
   va_list args;
+  va_list copy_args;
   int ret;
   va_start(args, format);
-
+  va_copy(copy_args, args);
   // NOTE: one can get automatic parallelization (in a second thread) for
   // gzipped output by opening a pipe to gzip (or bgzip). For example:
   //FILE *pipe = popen("gzip > output.vcf.gz", "w");
@@ -134,7 +135,7 @@ int FileOrGZ<gzFile>::printf(const char *format, ...) {
       }
     }
     // redo:
-    ret = vsnprintf(buf + buf_len, buf_size - buf_len, format, args);
+    ret = vsnprintf(buf + buf_len, buf_size - buf_len, format, copy_args);
   }
 
   buf_len += ret;
@@ -145,6 +146,7 @@ int FileOrGZ<gzFile>::printf(const char *format, ...) {
   }
 
   va_end(args);
+  va_end(copy_args);
   return ret;
 }
 
