@@ -418,7 +418,8 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 						    /*gzOut=*/ &out);
 		  if (idOut && curIsFounder) {
 		    // print Ped-sim id to founder id file:
-		    printSampleId(idOut, simDetails[ped], fam, gen, branch,ind);
+		    printSampleId(idOut, simDetails[ped], fam, gen, branch, ind,
+				  /*(always print)=*/true);
 
 		    // since males on the X chromosome only have a defined
 		    // haplotype for haps index 1, we use that index
