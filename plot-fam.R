@@ -10,7 +10,13 @@ if (length(args) != 1) {
       sep="")
 }
 
-famfile <- paste(args[1], ".fam", sep="")
+famfile <- args[1]
+
+if (substr(famfile, nchar(famfile)+1-4, nchar(famfile)) != ".fam") {
+  famfile <- paste(famfile, ".fam", sep="")
+} else {
+  args[1] <- substr(famfile, 0, nchar(famfile)-4)
+}
 
 if (!file.exists(famfile)) {
   cat("ERROR:", famfile, "does not exist\n")
