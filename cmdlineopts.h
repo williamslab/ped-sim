@@ -46,6 +46,10 @@ class CmdLineOpts {
     // later
     static unsigned int randSeed;
 
+    // Dry run? Only prints a fam file with one replicate per pedigee and
+    // outputs the number of founders needed to simulate genetic data
+    static int dryRun;
+
     // Print the fam file?
     static int printFam;
 

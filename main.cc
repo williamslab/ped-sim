@@ -149,8 +149,8 @@ int main(int argc, char **argv) {
 
   // The first index is the pedigree number corresponding to the description of
   // the pedigree to be simulated in the def file
-  // The second index is the family: we replicate the same pedigree structure
-  // some number of times as specified in the def file
+  // The second index is the replicate: we replicate the same pedigree
+  // structure some number of times, as specified in the def file
   // The third index is the generation number (0-based)
   // The fourth index is the branch of the pedigree
   // The fifth index is the individual number
@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (CmdLineOpts::printBP) {
+  if (CmdLineOpts::printBP && !CmdLineOpts::dryRun) {
     for(int o = 0; o < 2; o++) {
       fprintf(outs[o], "Printing break points... ");
       fflush(outs[o]);
@@ -201,29 +201,31 @@ int main(int argc, char **argv) {
     }
   }
 
-  for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "Printing IBD segments");
-    if (CmdLineOpts::printMRCA)
-      fprintf(outs[o], " and MRCAs... ");
-    else
-      fprintf(outs[o], "... ");
-    fflush(outs[o]);
-  }
-  sprintf(outFile, "%s.seg", CmdLineOpts::outPrefix);
-  char *mrcaFile = NULL;
-  if (CmdLineOpts::printMRCA) {
-    mrcaFile = new char[outFileLen];
-    if (mrcaFile == NULL) {
-      printf("ERROR: out of memory");
-      exit(5);
+  if (!CmdLineOpts::dryRun) {
+    for(int o = 0; o < 2; o++) {
+      fprintf(outs[o], "Printing IBD segments");
+      if (CmdLineOpts::printMRCA)
+	fprintf(outs[o], " and MRCAs... ");
+      else
+	fprintf(outs[o], "... ");
+      fflush(outs[o]);
     }
-    sprintf(mrcaFile, "%s.mrca", CmdLineOpts::outPrefix);
-  }
-  locatePrintIBD(simDetails, hapCarriers, map, sexSpecificMaps,
-		 /*ibdFile=*/ outFile, /*ibdSegs=print them only=*/ NULL,
-		 mrcaFile);
-  for(int o = 0; o < 2; o++) {
-    fprintf(outs[o], "done.\n");
+    sprintf(outFile, "%s.seg", CmdLineOpts::outPrefix);
+    char *mrcaFile = NULL;
+    if (CmdLineOpts::printMRCA) {
+      mrcaFile = new char[outFileLen];
+      if (mrcaFile == NULL) {
+	printf("ERROR: out of memory");
+	exit(5);
+      }
+      sprintf(mrcaFile, "%s.mrca", CmdLineOpts::outPrefix);
+    }
+    locatePrintIBD(simDetails, hapCarriers, map, sexSpecificMaps,
+		   /*ibdFile=*/ outFile, /*ibdSegs=print them only=*/ NULL,
+		   mrcaFile);
+    for(int o = 0; o < 2; o++) {
+      fprintf(outs[o], "done.\n");
+    }
   }
 
   if (CmdLineOpts::printFam) {
@@ -236,7 +238,7 @@ int main(int argc, char **argv) {
       fprintf(outs[o], "done.  (Do not use with PLINK data: see README.md)\n");
   }
 
-  if (CmdLineOpts::inVCFfile) {
+  if (CmdLineOpts::inVCFfile && !CmdLineOpts::dryRun) {
     for(int o = 0; o < 2; o++) {
       fprintf(outs[o], "Reading input VCF meta data... ");
       fflush(outs[o]);
@@ -253,9 +255,35 @@ int main(int argc, char **argv) {
 	fprintf(outs[o], "done.\n");
   }
   else {
+    int numFoundersNeeded = totalFounderHaps / 2;
+
+    if (CmdLineOpts::dryRun) {
+      // with --dry_run, we only included one replicate per pedigree
+      // we'll get the replicate count given in the def file and the number of
+      // founders needed for each pedigree below
+      numFoundersNeeded = 0;
+      // we iterate in reverse since the founderOffset field is relevant to
+      // the previous pedigree, with <totalFounderHaps> providing the same
+      // value for the last pedigree. (See the simulate() function.)
+      int prevFounderOffset = totalFounderHaps;
+      for(int ped = simDetails.size() - 1; ped >= 0; ped--) {
+	int numFoundersPerReplicate = prevFounderOffset -
+						  simDetails[ped].founderOffset;
+	assert(numFoundersPerReplicate > 0);
+
+	// Actually the above is the number of founder haplotypes, so needs to
+	// be halved:
+	assert(numFoundersPerReplicate % 2 == 0);
+	numFoundersPerReplicate /= 2;
+	numFoundersNeeded += simDetails[ped].numReps * numFoundersPerReplicate;
+
+	prevFounderOffset = simDetails[ped].founderOffset;
+      }
+    }
+
     for(int o = 0; o < 2; o++)
       fprintf(outs[o], "\nTo simulate genetic data, must use an input VCF with %d founders.\n",
-	      totalFounderHaps / 2);
+	      numFoundersNeeded);
   }
 
   fclose(log);

@@ -53,10 +53,10 @@ struct SexConstraint {
 ////////////////////////////////////////////////////////////////////////////////
 // Used to store details about each simulation
 struct SimDetails {
-  SimDetails(int nFam, int nGen, int **print, int *branches, Parent **parents,
+  SimDetails(int nReps, int nGen, int **print, int *branches, Parent **parents,
 	     SexConstraint **sexes, int i1FixedSex, int **spouses,
 	     char *theName) {
-    numFam = nFam;
+    numReps = nReps;
     numGen = nGen;
     numSampsToPrint = print;
     numBranches = branches;
@@ -72,7 +72,7 @@ struct SimDetails {
     strcpy(name, theName);
   }
   SimDetails(const SimDetails &other) {
-    numFam = other.numFam;
+    numReps = other.numReps;
     numGen = other.numGen;
     numSampsToPrint = other.numSampsToPrint;
     numBranches = other.numBranches;
@@ -94,7 +94,7 @@ struct SimDetails {
   ~SimDetails() {
     delete [] name;
   }
-  int numFam;
+  int numReps; // number of replicates
   int numGen;
   int **numSampsToPrint;
   int *numBranches;
@@ -144,9 +144,9 @@ struct Person {
 // is the founder of) a given haplotype
 struct InheritRecord {
   InheritRecord() { assert(false); }
-  InheritRecord(unsigned int p, int f, int g, int b, int i, int s, int e) {
+  InheritRecord(unsigned int p, int r, int g, int b, int i, int s, int e) {
     ped = p;
-    fam = f;
+    rep = r;
     gen = g;
     branch = b;
     ind = i;
@@ -155,7 +155,7 @@ struct InheritRecord {
     assert(startPos <= endPos);
   }
   unsigned int ped;
-  int fam;
+  int rep;
   int gen;
   int branch;
   int ind;

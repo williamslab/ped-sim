@@ -20,19 +20,19 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
 		    vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
 		    char *mrcaFile);
-void printIBD(FILE *out, SimDetails &pedDetails, int fam,
+void printIBD(FILE *out, SimDetails &pedDetails, int rep,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
 	      GeneticMap &map, bool sexSpecificMaps,
 	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
 	      FILE *mrcaOut);
 void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap);
-void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
+void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int rep,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
 			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs);
 void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
-		       int fam);
+		       int rep);
 void clearTheSegs(SimDetails &pedDetails, 
 		  vector< vector< vector<IBDRecord> > > *theSegs);
 

@@ -19,6 +19,7 @@ char  *CmdLineOpts::inVCFfile = NULL;
 char  *CmdLineOpts::outPrefix = NULL;
 bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
+int    CmdLineOpts::dryRun = 0;
 int    CmdLineOpts::printFam = 0;
 int    CmdLineOpts::printBP = 0;
 int    CmdLineOpts::printMRCA = 0;
@@ -59,6 +60,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"pois", no_argument, &poisson, 1},
     {"seed", required_argument, NULL, RAND_SEED},
     {"sexes", required_argument, NULL, SEXES},
+    {"dry_run", no_argument, &CmdLineOpts::dryRun, 1},
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
     {"mrca", no_argument, &CmdLineOpts::printMRCA, 1},
@@ -281,6 +283,10 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     chrX[1] = '\0';
   }
 
+  if (dryRun) {
+    printFam = 1;
+  }
+
   if (!haveGoodArgs) {
     printUsage(stderr, argv[0]);
   }
@@ -324,6 +330,9 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
   fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
   fprintf(out, "  --nogz\t\talways print uncompressed VCF files\n");
+  fprintf(out, "\n");
+  fprintf(out, "  --dry_run\t\toutput only a fam file with one replicate per pedigree:\n");
+  fprintf(out, "\t\t\t  no IBD, bp, VCF, or other files generated\n");
   fprintf(out, "\n");
   fprintf(out, "  --seed <#>\t\tspecify random seed\n");
   fprintf(out, "\n");

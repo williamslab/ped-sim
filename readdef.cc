@@ -102,22 +102,22 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
       /////////////////////////////////////////////////////////////////////////
       // parse new pedigree description
       char *name = strtok_r(NULL, delim, &saveptr);
-      char *numFamStr = strtok_r(NULL, delim, &saveptr);
+      char *numRepsStr = strtok_r(NULL, delim, &saveptr);
       char *numGenStr = strtok_r(NULL, delim, &saveptr);
       char *i1SexStr = strtok_r(NULL, delim, &saveptr);
       // Note: leaving i1SexStr out of the next conditional because it can be
       //       NULL or non-NULL
-      if (name == NULL || numFamStr == NULL || numGenStr == NULL ||
+      if (name == NULL || numRepsStr == NULL || numGenStr == NULL ||
 				      strtok_r(NULL, delim, &saveptr) != NULL) {
 	fprintf(stderr, "ERROR: line %d in def: expect four or five fields for pedigree definition:\n",
 		line);
-	fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
+	fprintf(stderr, "       def [name] [numReps] [numGen] <sex of i1>\n");
 	exit(5);
       }
       errno = 0; // initially
-      int curNumFam = strtol(numFamStr, &endptr, 10);
+      int curNumReps = strtol(numRepsStr, &endptr, 10);
       if (errno != 0 || *endptr != '\0') {
-	fprintf(stderr, "ERROR: line %d in def: expected number of families to simulate as second token\n",
+	fprintf(stderr, "ERROR: line %d in def: expected number of replicates to simulate as second token\n",
 		line);
 	if (errno != 0)
 	  perror("strtol");
@@ -184,7 +184,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
 	curSexConstraints[gen] = NULL;
 	curBranchNumSpouses[gen] = NULL;
       }
-      simDetails.emplace_back(curNumFam, curNumGen, curNumSampsToPrint,
+      simDetails.emplace_back(curNumReps, curNumGen, curNumSampsToPrint,
 			      curNumBranches, curBranchParents,
 			      curSexConstraints, curI1Sex,
 			      curBranchNumSpouses, name);
@@ -198,7 +198,7 @@ void readDef(vector<SimDetails> &simDetails, char *defFile) {
     if (curNumSampsToPrint == NULL) {
       fprintf(stderr, "ERROR: line %d in def: expect four or five fields for pedigree definition:\n",
 	      line);
-      fprintf(stderr, "       def [name] [numFam] [numGen] <sex of i1>\n");
+      fprintf(stderr, "       def [name] [numReps] [numGen] <sex of i1>\n");
       exit(5);
     }
 

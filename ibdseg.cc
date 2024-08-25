@@ -17,13 +17,13 @@
 
 bool compInheritRecSamp(const InheritRecord &a, const InheritRecord &b) {
   return (a.ped < b.ped) ||
-	 (a.ped == b.ped && a.fam < b.fam) ||
-	 (a.ped == b.ped && a.fam == b.fam && a.gen < b.gen) ||
-	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	 (a.ped == b.ped && a.rep < b.rep) ||
+	 (a.ped == b.ped && a.rep == b.rep && a.gen < b.gen) ||
+	 (a.ped == b.ped && a.rep == b.rep && a.gen == b.gen &&
 	  a.branch < b.branch) ||
-	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	 (a.ped == b.ped && a.rep == b.rep && a.gen == b.gen &&
 	  a.branch == b.branch && a.ind < b.ind) ||
-	 (a.ped == b.ped && a.fam == b.fam && a.gen == b.gen &&
+	 (a.ped == b.ped && a.rep == b.rep && a.gen == b.gen &&
 	  a.branch == b.branch && a.ind == b.ind && a.startPos < b.startPos);
 }
 
@@ -86,7 +86,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
     exit(5);
   }
   int curPed = -1;
-  int curFam = -1;
+  int curRep = -1;
 
   int totalFounderHaps = hapCarriers.size();
   unsigned int numChrs = map.size();
@@ -114,7 +114,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	       it1++) {
 	for(auto it2 = it1 + 1;
 		 it2 != hapCarriers[foundHapNum][chrIdx].end(); ) {
-	  if (it1->ped != it2->ped || it1->fam != it2->fam ||
+	  if (it1->ped != it2->ped || it1->rep != it2->rep ||
 	      it1->gen != it2->gen || it1->branch != it2->branch ||
 	      it1->ind != it2->ind)
 	    // sorting means there are no records after <it2> that are the same
@@ -158,18 +158,18 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
       for(auto it1 = hapCarriers[foundHapNum][chrIdx].begin();
 	       it1 != hapCarriers[foundHapNum][chrIdx].end();
 	       it1++) {
-	// <theSegs> stores segments for a given pedigree and family, and to
+	// <theSegs> stores segments for a given pedigree and replicate, and to
 	// save space, it gets reused across these.
-	// If we're about to start analyzing a new pedigree or family, print
+	// If we're about to start analyzing a new pedigree or replicate, print
 	// the IBD segments found below and clear out <theSegs>.
-	if ((int) it1->ped != curPed || (int) it1->fam != curFam) {
+	if ((int) it1->ped != curPed || (int) it1->rep != curRep) {
 	  // print stored segments, locating any IBD2
 	  if (curPed >= 0)
-	    printIBD(out, simDetails[curPed], curFam, theSegs, map,
+	    printIBD(out, simDetails[curPed], curRep, theSegs, map,
 		     sexSpecificMaps, ibdSegs, mrcaOut);
 	  // update:
 	  curPed = it1->ped;
-	  curFam = it1->fam;
+	  curRep = it1->rep;
 
 	  clearTheSegs(simDetails[curPed], theSegs);
 	}
@@ -195,7 +195,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
 	  // Have IBD segment! would print, but we have to find IBD2 regions
 	  // before we can do so.
-	  assert(it1->ped == it2->ped && it1->fam == it2->fam);
+	  assert(it1->ped == it2->ped && it1->rep == it2->rep);
 	  assert(it1->startPos <= it2->startPos);
 
 	  int startPos = it2->startPos;
@@ -254,7 +254,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   } // foundHapNum loop
 
   if (curPed >= 0)
-    printIBD(out, simDetails[curPed], curFam, theSegs, map, sexSpecificMaps,
+    printIBD(out, simDetails[curPed], curRep, theSegs, map, sexSpecificMaps,
 	     ibdSegs, mrcaOut);
 
   if (out)
@@ -266,7 +266,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 // print stored segments, locating any IBD2 regions
 // if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
 // on HAPI-DNA.org displays
-void printIBD(FILE *out, SimDetails &pedDetails, int fam,
+void printIBD(FILE *out, SimDetails &pedDetails, int rep,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
 	      GeneticMap &map, bool sexSpecificMaps,
 	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
@@ -330,19 +330,19 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 
 	      // any preceding IBD1 segment?
 	      if (segs[i].startPos < segs[i + nextI].startPos) {
-		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
 				   segs[i], /*realStart=*/ segs[i].startPos,
 				   /*realEnd=*/ segs[i + nextI].startPos - 1,
 				   /*type=IBD1=*/ 1, map, sexSpecificMaps,
 				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    fam);
+				    rep);
 	      }
 
 	      // now the IBD2 segment:
 	      int ibd2End = min(segs[i].endPos, segs[i + nextI].endPos);
-	      printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+	      printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
 				 segs[i],
 				 /*realStart=*/ segs[i + nextI].startPos,
 				 /*realEnd=*/ ibd2End,
@@ -350,7 +350,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				 ibdSegs);
 	      if (mrcaOut)
 		printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				  fam);
+				  rep);
 
 	      // likely another segment just after the IBD2 end, but that region
 	      // must be checked against later <segs>. To ensure this is done
@@ -407,7 +407,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 	      if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
 		  ind == segs[i].otherInd) {
 		// HBD
-		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
 				   segs[i],
 				   /*realStart=standard=*/ segs[i].startPos,
 				   /*realEnd=standard=*/ segs[i].endPos,
@@ -415,11 +415,11 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    fam);
+				    rep);
 	      }
 	      else {
 		// IBD1
-		printOneIBDSegment(out, pedDetails, fam, gen, branch, ind,
+		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
 				   segs[i],
 				   /*realStart=standard=*/ segs[i].startPos,
 				   /*realEnd=standard=*/ segs[i].endPos,
@@ -427,7 +427,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int fam,
 				   ibdSegs);
 		if (mrcaOut)
 		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    fam);
+				    rep);
 	      }
 	    }
 	  } // looping over <nextI> values
@@ -513,7 +513,7 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
 // Prints the IBD segment described by the parameters to <out>
 // if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
 // on HAPI-DNA.org displays
-void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
+void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int rep,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
@@ -521,9 +521,9 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
   const char *ibdTypeStr[3] = { "HBD", "IBD1", "IBD2" };
 
   if (out) { // want to print the segment (if not, <ibdSegs> will be non-NULL)
-    printSampleId(out, pedDetails, fam, gen, branch, ind);
+    printSampleId(out, pedDetails, rep, gen, branch, ind);
     fprintf(out, "\t");
-    printSampleId(out, pedDetails, fam, seg.otherGen, seg.otherBranch,
+    printSampleId(out, pedDetails, rep, seg.otherGen, seg.otherBranch,
 		  seg.otherInd);
     fprintf(out, "\t");
 
@@ -606,10 +606,10 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int fam,
 // For printing the founder id that segments coalesce in to the .mrca
 // file
 void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
-		       int fam) {
+		       int rep) {
   int founderIdx = (foundHapNum - pedDetails.founderOffset) %
 							pedDetails.numFounders;
-  fprintf(mrcaOut, "%s%d_%s\n", pedDetails.name, fam+1,
+  fprintf(mrcaOut, "%s%d_%s\n", pedDetails.name, rep+1,
 	  pedDetails.founderIdSuffix[founderIdx]);
 }
 

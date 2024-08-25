@@ -16,7 +16,7 @@ using namespace std;
 void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
 	       uint32_t sexCount[2], const char *sexesFile);
 template<typename O_TYPE = FILE *>
-bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
+bool printSampleId(FILE *out, SimDetails &pedDetails, int rep, int gen,
 		   int branch, int ind, bool printAllGens = false,
 		   FileOrGZ<O_TYPE> *gzOut = NULL);
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,

@@ -28,13 +28,13 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       GeneticMap &map, vector<COInterfere> &coIntf,
 		       unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
-		       int ped, int fam, int curGen, int branch, int ind,
+		       int ped, int rep, int curGen, int branch, int ind,
 		       unsigned int fixedCOidxs[2]);
 void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      int switchPos, unsigned int curSegIdx[2], int &curHap,
 	      unsigned int chrIdx,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
-	      int ped, int fam, int curGen, int branch, int ind);
+	      int ped, int rep, int curGen, int branch, int ind);
 int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch);
 void deleteTheSamples(vector<SimDetails> &simDetails, Person *****theSamples);
 

@@ -19,7 +19,7 @@ exponential_distribution<double> crossoverDist(1.0);
 
 
 // Simulate data for each specified pedigree type for the number of requested
-// families. Returns the number of founder haplotypes used to produce these
+// replicates. Returns the number of founder haplotypes used to produce these
 // simulated samples.
 int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	     GeneticMap &map, bool sexSpecificMaps, vector<COInterfere> &coIntf,
@@ -61,7 +61,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
     exit(5);
   }
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
-    int numFam = simDetails[ped].numFam;
+    int numReps = simDetails[ped].numReps;
     int numGen = simDetails[ped].numGen;
     int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
@@ -72,28 +72,32 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 
     simDetails[ped].founderOffset = totalFounderHaps;
 
+    if (CmdLineOpts::dryRun)
+      // for --dry_run, only want one replicate per pedigree
+      numReps = 1;
+
     ////////////////////////////////////////////////////////////////////////////
     // Allocate space and make Person objects for all those we will simulate,
     // assigning sex if <sexSpecificMaps> is true
-    theSamples[ped] = new Person***[numFam];
+    theSamples[ped] = new Person***[numReps];
     if (theSamples[ped] == NULL) {
       printf("ERROR: out of memory");
       exit(5);
     }
-    for (int fam = 0; fam < numFam; fam++) {
+    for (int rep = 0; rep < numReps; rep++) {
 
-      // ready to make sex assignments for this family
+      // ready to make sex assignments for this replicate
       sexAssignments.clear();
 
-      theSamples[ped][fam] = new Person**[numGen];
-      if (theSamples[ped][fam] == NULL) {
+      theSamples[ped][rep] = new Person**[numGen];
+      if (theSamples[ped][rep] == NULL) {
 	printf("ERROR: out of memory");
 	exit(5);
       }
       for(int curGen = 0; curGen < numGen; curGen++) {
 
-	theSamples[ped][fam][curGen] = new Person*[ numBranches[curGen] ];
-	if (theSamples[ped][fam][curGen] == NULL) {
+	theSamples[ped][rep][curGen] = new Person*[ numBranches[curGen] ];
+	if (theSamples[ped][rep][curGen] == NULL) {
 	  printf("ERROR: out of memory");
 	  exit(5);
 	}
@@ -114,8 +118,8 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	  // Note that when the branch is new and has no parents, all
 	  // individuals are founders.
 	  int numPersons = numFounders + numNonFounders;
-	  theSamples[ped][fam][curGen][branch] = new Person[numPersons];
-	  if (theSamples[ped][fam][curGen][branch] == NULL) {
+	  theSamples[ped][rep][curGen][branch] = new Person[numPersons];
+	  if (theSamples[ped][rep][curGen][branch] == NULL) {
 	    printf("ERROR: out of memory");
 	    exit(5);
 	  }
@@ -151,16 +155,16 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    else                           // one spouse by default
 	      thisBranchNumSpouses = 1;
 	    for(int ind = 0; ind < thisBranchNumSpouses; ind++) {
-	      theSamples[ped][fam][curGen][branch][ind].sex = 1 ^ branchAssign;
+	      theSamples[ped][rep][curGen][branch][ind].sex = 1 ^ branchAssign;
 	    }
 	    // sex of "primary" person -- who each of the above individuals have
 	    // children with -- index just after the spouses
 	    int primaryIdx = thisBranchNumSpouses;
-	    theSamples[ped][fam][curGen][branch][primaryIdx].sex = branchAssign;
+	    theSamples[ped][rep][curGen][branch][primaryIdx].sex = branchAssign;
 	  }
 
 	  /////////////////////////////////////////////////////////////////////
-	  // All samples allocated for this pedigree/family/generation/branch:
+	  // Samples allocated for this pedigree/replicate/generation/branch:
 	  // simulate the actual samples
 
 	  Segment trivialSeg;
@@ -179,7 +183,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	    // Simulate the founders for this chromosome:
 	    if (curGen != numGen - 1) { // no founders in the last generation
 	      for(int ind = 0; ind < numFounders; ind++) {
-		if (fam == 0 && CmdLineOpts::printMRCA) {
+		if (rep == 0 && CmdLineOpts::printMRCA) {
 		  // number of digits for the numbers is 1 + (value+1) / 10
 		  // 6 for 'g-b-i\0'
 		  int branchNumSpouses =
@@ -208,7 +212,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  if (chrIdx == 0) {
 		    foundHapNum = totalFounderHaps++;
 		    int founderSex =
-				  theSamples[ped][fam][curGen][branch][ind].sex;
+				  theSamples[ped][rep][curGen][branch][ind].sex;
 		    if (h == 0)
 		      // track which hap numbers (only the even indexed ones)
 		      // are of each sex (for use when outputting VCFs):
@@ -223,26 +227,26 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		    // the haplotype number assigned to the previous
 		    // chromosome for this person:
 		    foundHapNum =
-			theSamples[ped][fam][curGen][branch][ind].haps[h].
+			theSamples[ped][rep][curGen][branch][ind].haps[h].
 						      back().back().foundHapNum;
 
 		  if (map.isX(chrIdx) && h == 0 &&
-		      theSamples[ped][fam][curGen][branch][ind].sex == 0)
+		      theSamples[ped][rep][curGen][branch][ind].sex == 0)
 		    // only one haplotype (maternal) for males on X
 		    continue;
 
 		  trivialSeg.foundHapNum = foundHapNum;
 
 		  // the following copies <trivialSeg>, so we can reuse it
-		  theSamples[ped][fam][curGen][branch][ind].haps[h].
+		  theSamples[ped][rep][curGen][branch][ind].haps[h].
 								 emplace_back();
-		  theSamples[ped][fam][curGen][branch][ind].haps[h].back().
+		  theSamples[ped][rep][curGen][branch][ind].haps[h].back().
 							  push_back(trivialSeg);
 
 		  // print this branch?
 		  if (numSampsToPrint[curGen][branch] > 0) {
 		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
-			ped, fam, curGen, branch, ind, chrStart, chrEnd);
+			ped, rep, curGen, branch, ind, chrStart, chrEnd);
 		  }
 
 		}
@@ -285,18 +289,18 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	      }
 	    }
 
-	    Person ***curFamSamps = theSamples[ped][fam];
+	    Person ***curRepSamps = theSamples[ped][rep];
 	    // the non-founders are stored just after the founders
 	    for(int ind = numFounders; ind < numPersons; ind++) {
 	      // If we're using sex-specific maps, the two parents' sexes should
 	      // differ
 	      if (sexSpecificMaps) {
-		assert(curFamSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex !=
-		       curFamSamps[ pars[1].gen ][ pars[1].branch ][ parIdx[1] ].sex);
+		assert(curRepSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex !=
+		       curRepSamps[ pars[1].gen ][ pars[1].branch ][ parIdx[1] ].sex);
 	      }
 
 	      for(int p = 0; p < 2; p++) { // meioses from each parent index <p>
-		Person &theParent = curFamSamps[ pars[p].gen ][ pars[p].branch ][ parIdx[p] ];
+		Person &theParent = curRepSamps[ pars[p].gen ][ pars[p].branch ][ parIdx[p] ];
 
 		int hapIdx; // haplotype index for the simulated sample
 		if (sexSpecificMaps)
@@ -305,7 +309,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		else
 		  hapIdx = p;
 
-		Person &thePerson = curFamSamps[curGen][branch][ind];
+		Person &thePerson = curRepSamps[curGen][branch][ind];
 
 		if (map.isX(chrIdx) && thePerson.sex == 0 && hapIdx == 0)
 		  // only one haplotype for males on X: the one from Mom
@@ -313,7 +317,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  continue;
 
 		// Make space for this haplotype in the current sample:
-		curFamSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
+		curRepSamps[curGen][branch][ind].haps[hapIdx].emplace_back();
 #ifndef NOFIXEDCO
 		if (p == 0 && chrIdx == 0 && curFixedCOidx >= 0) {
 		  // assign fixed COs for <thePerson>:
@@ -327,7 +331,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 				  hapCarriers,
 				  (numSampsToPrint[curGen][branch] > 0) ? ped
 									: -1,
-				  fam, curGen, branch, ind,
+				  rep, curGen, branch, ind,
 				  thePerson.fixedCOidxs);
 	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
 	    } // <ind>
@@ -335,10 +339,10 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 	} // <branch>
       } // <curGen>
 
-      if (fam == 0)
+      if (rep == 0)
 	simDetails[ped].numFounders = totalFounderHaps -
 						  simDetails[ped].founderOffset;
-    } // <fam>
+    } // <rep>
 
   } // <ped>
 
@@ -392,7 +396,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       GeneticMap &map, vector<COInterfere> &coIntf,
 		       unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
-		       int ped, int fam, int curGen, int branch, int ind,
+		       int ped, int rep, int curGen, int branch, int ind,
 		       unsigned int fixedCOidxs[2]) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
@@ -479,7 +483,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
       // copy Segments from <curHap>
       copySegs(toGenerate, parent, nextSegStart, switchPos, curSegIdx, curHap,
-	       chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
+	       chrIdx, hapCarriers, ped, rep, curGen, branch, ind);
     }
 #ifndef NOFIXEDCO
   }
@@ -490,7 +494,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
     for(auto it = theCOs.begin(); it != theCOs.end(); it++) {
       // copy Segments from <curHap>
       copySegs(toGenerate, parent, nextSegStart, /*switchPos=*/ *it, curSegIdx,
-	       curHap, chrIdx, hapCarriers, ped, fam, curGen, branch, ind);
+	       curHap, chrIdx, hapCarriers, ped, rep, curGen, branch, ind);
     }
   }
 #endif // NOFIXEDCO
@@ -504,7 +508,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
     if (ped >= 0) {
       hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	  ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
+	  ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
     }
     nextSegStart = seg.endPos + 1;
   }
@@ -522,7 +526,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 	      int switchPos, unsigned int curSegIdx[2], int &curHap,
 	      unsigned int chrIdx,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
-	      int ped, int fam, int curGen, int branch, int ind) {
+	      int ped, int rep, int curGen, int branch, int ind) {
   for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
 							  curSegIdx[curHap]++) {
     if (nextSegStart > switchPos)
@@ -537,7 +541,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, fam, curGen, branch, ind, nextSegStart, switchPos);
+	    ped, rep, curGen, branch, ind, nextSegStart, switchPos);
       }
       nextSegStart = switchPos + 1;
       break; // done copying
@@ -547,7 +551,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, fam, curGen, branch, ind, nextSegStart, seg.endPos);
+	    ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
       }
       nextSegStart = seg.endPos + 1;
     }
@@ -579,17 +583,22 @@ int getBranchNumSpouses(SimDetails &pedDetails, int gen, int branch) {
 
 void deleteTheSamples(vector<SimDetails> &simDetails, Person *****theSamples) {
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) { // for each ped
-    int numFam = simDetails[ped].numFam;
+    int numReps = simDetails[ped].numReps;
     int numGen = simDetails[ped].numGen;
     int *numBranches = simDetails[ped].numBranches;
-    for (int fam = 0; fam < numFam; fam++) {
+
+    if (CmdLineOpts::dryRun)
+      // for --dry_run, only generated one replicate per pedigree
+      numReps = 1;
+
+    for (int rep = 0; rep < numReps; rep++) {
       for(int curGen = 0; curGen < numGen; curGen++) {
 	for(int branch = 0; branch < numBranches[curGen]; branch++) {
-	  delete [] theSamples[ped][fam][curGen][branch];
+	  delete [] theSamples[ped][rep][curGen][branch];
 	}
-	delete [] theSamples[ped][fam][curGen];
+	delete [] theSamples[ped][rep][curGen];
       }
-      delete [] theSamples[ped][fam];
+      delete [] theSamples[ped][rep];
     }
     delete [] theSamples[ped];
   }

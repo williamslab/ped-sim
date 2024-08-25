@@ -76,7 +76,7 @@ void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
 // Prints the sample id of the given sample to <out>.
 // Returns true if the sample is a founder, false otherwise.
 template<class IO_TYPE>
-bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
+bool printSampleId(FILE *out, SimDetails &pedDetails, int rep, int gen,
 		   int branch, int ind, bool printAllGens,
 		   FileOrGZ<IO_TYPE> *gzOut) {
   int thisBranchNumSpouses = getBranchNumSpouses(pedDetails, gen, branch);
@@ -85,10 +85,10 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
   if (ind < thisBranchNumSpouses) {
     if (shouldPrint) {
       if (!gzOut)
-	fprintf(out, "%s%d_g%d-b%d-s%d", pedDetails.name, fam+1, gen+1,
+	fprintf(out, "%s%d_g%d-b%d-s%d", pedDetails.name, rep+1, gen+1,
 		branch+1, ind+1);
       else
-	gzOut->printf("%s%d_g%d-b%d-s%d", pedDetails.name, fam+1, gen+1,
+	gzOut->printf("%s%d_g%d-b%d-s%d", pedDetails.name, rep+1, gen+1,
 		      branch+1, ind+1);
     }
     return true; // is a founder
@@ -96,10 +96,10 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
   else {
     if (shouldPrint) {
       if (!gzOut)
-	fprintf(out, "%s%d_g%d-b%d-i%d", pedDetails.name, fam+1, gen+1,
+	fprintf(out, "%s%d_g%d-b%d-i%d", pedDetails.name, rep+1, gen+1,
 		branch+1, ind - thisBranchNumSpouses + 1);
       else
-	gzOut->printf("%s%d_g%d-b%d-i%d", pedDetails.name, fam+1, gen+1,
+	gzOut->printf("%s%d_g%d-b%d-i%d", pedDetails.name, rep+1, gen+1,
 		      branch+1, ind - thisBranchNumSpouses + 1);
     }
     if (gen == 0 || pedDetails.branchParents[gen][branch*2].branch < 0) {
@@ -113,6 +113,9 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int fam, int gen,
 // Print the break points to <outFile>
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      GeneticMap &map, char *bpFile) {
+  // shouldn't be possible to get here with --dry_run
+  assert(!CmdLineOpts::dryRun);
+
   FILE *out = fopen(bpFile, "w");
   if (!out) {
     fprintf(stderr, "ERROR: could not open output file %s!\n", bpFile);
@@ -121,14 +124,14 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
-    int numFam = simDetails[ped].numFam;
+    int numReps = simDetails[ped].numReps;
     int numGen = simDetails[ped].numGen;
     int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
     Parent **branchParents = simDetails[ped].branchParents;
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
-    for(int fam = 0; fam < numFam; fam++) {
+    for(int rep = 0; rep < numReps; rep++) {
       for(int gen = 0; gen < numGen; gen++) {
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
 	  if (numSampsToPrint[gen][branch] > 0) {
@@ -140,20 +143,20 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 
 	    for(int ind = 0; ind < numPersons; ind++) {
 	      for(int h = 0; h < 2; h++) {
-		int sex = theSamples[ped][fam][gen][branch][ind].sex;
-		printSampleId(out, simDetails[ped], fam, gen, branch, ind);
+		int sex = theSamples[ped][rep][gen][branch][ind].sex;
+		printSampleId(out, simDetails[ped], rep, gen, branch, ind);
 		fprintf(out, " s%d h%d", sex, h);
 
 		for(unsigned int chr = 0; chr < map.size(); chr++) {
 		  if (map.isX(chr) &&
-		      theSamples[ped][fam][gen][branch][ind].sex == 0 &&
+		      theSamples[ped][rep][gen][branch][ind].sex == 0 &&
 		      h == 0)
 		    continue; // no paternal X chromosome in males
 
 		  // print chrom name and starting position
 		  fprintf(out, " %s|%d", map.chromName(chr),
 			  map.chromStartPhys(chr));
-		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
+		  Haplotype &curHap = theSamples[ped][rep][gen][branch][ind].
 								   haps[h][chr];
 		  for(unsigned int s = 0; s < curHap.size(); s++) {
 		    Segment &seg = curHap[s];
@@ -178,6 +181,9 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	     int totalFounderHaps, const char *inVCFfile, char *outFile,
 	     GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
 	     unordered_map<const char*,uint8_t,HashString,EqString> &sexes) {
+  // shouldn't be possible to get here with --dry_run
+  assert(!CmdLineOpts::dryRun);
+
   // decide whether to use gz I/O or standard, and call makeVCF() accordingly
   int inVCFlen = strlen(inVCFfile);
   if (strcmp(&CmdLineOpts::inVCFfile[ inVCFlen - 3 ], ".gz") == 0) {
@@ -205,7 +211,7 @@ int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 }
 
-// Given the simulated break points for individuals in each pedigree/family
+// Given the simulated break points for individuals in each pedigree/replicate
 // stored in <theSamples> and other necessary information, reads input VCF
 // format data from the file named <inVCFfile> and prints the simulated
 // haplotypes for each sample to <outVCFfile> in VCF format.
@@ -214,6 +220,9 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
 	    GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
 	    unordered_map<const char*,uint8_t,HashString,EqString> &sexes) {
+  // shouldn't be possible to get here with --dry_run
+  assert(!CmdLineOpts::dryRun);
+
   // open input VCF file:
   FileOrGZ<I_TYPE> in;
   bool success = in.open(inVCFfile, "r");
@@ -393,14 +402,14 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 
       // print sample ids:
       for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
-	int numFam = simDetails[ped].numFam;
+	int numReps = simDetails[ped].numReps;
 	int numGen = simDetails[ped].numGen;
 	int **numSampsToPrint = simDetails[ped].numSampsToPrint;
 	int *numBranches = simDetails[ped].numBranches;
 	Parent **branchParents = simDetails[ped].branchParents;
 	int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
-	for(int fam = 0; fam < numFam; fam++)
+	for(int rep = 0; rep < numReps; rep++)
 	  for(int gen = 0; gen < numGen; gen++)
 	    for(int branch = 0; branch < numBranches[gen]; branch++)
 	      if (numSampsToPrint[gen][branch] > 0 || idOut) { // need to print?
@@ -413,17 +422,17 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		  if (numSampsToPrint[gen][branch] > 0)
 		    out.printf("\t");
 		  bool curIsFounder = printSampleId(NULL, simDetails[ped],
-						    fam, gen, branch, ind,
+						    rep, gen, branch, ind,
 						    /*printAllGens=*/ false,
 						    /*gzOut=*/ &out);
 		  if (idOut && curIsFounder) {
 		    // print Ped-sim id to founder id file:
-		    printSampleId(idOut, simDetails[ped], fam, gen, branch, ind,
+		    printSampleId(idOut, simDetails[ped], rep, gen, branch, ind,
 				  /*(always print)=*/true);
 
 		    // since males on the X chromosome only have a defined
 		    // haplotype for haps index 1, we use that index
-		    int hapNum = theSamples[ped][fam][gen][branch][ind].
+		    int hapNum = theSamples[ped][rep][gen][branch][ind].
 				      haps[1][/*chrIdx=*/0].front().foundHapNum;
 		    hapNum--; // hap index 1 is an odd number, so we decrement
 		    assert(hapNum % 2 == 0);
@@ -624,14 +633,14 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     out.printf("\tGT");
 
     for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
-      int numFam = simDetails[ped].numFam;
+      int numReps = simDetails[ped].numReps;
       int numGen = simDetails[ped].numGen;
       int **numSampsToPrint = simDetails[ped].numSampsToPrint;
       int *numBranches = simDetails[ped].numBranches;
       Parent **branchParents = simDetails[ped].branchParents;
       int **branchNumSpouses = simDetails[ped].branchNumSpouses;
 
-      for(int fam = 0; fam < numFam; fam++)
+      for(int rep = 0; rep < numReps; rep++)
 	for(int gen = 0; gen < numGen; gen++)
 	  for(int branch = 0; branch < numBranches[gen]; branch++)
 	    if (numSampsToPrint[gen][branch] > 0) {
@@ -645,7 +654,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		int numHaps = 2;
 		bool maleX = false;
 		if (map.isX(chrIdx) &&
-		    theSamples[ped][fam][gen][branch][ind].sex == 0) {
+		    theSamples[ped][rep][gen][branch][ind].sex == 0) {
 		  maleX = true;
 		  // male X: haploid output per VCF spec
 		  numHaps = 1;
@@ -669,7 +678,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 		    continue;
 		  }
 
-		  Haplotype &curHap = theSamples[ped][fam][gen][branch][ind].
+		  Haplotype &curHap = theSamples[ped][rep][gen][branch][ind].
 								haps[h][chrIdx];
 		  while (curHap.front().endPos < pos) {
 		    pop_front(curHap);
@@ -897,7 +906,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
   }
 
   for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
-    int numFam = simDetails[ped].numFam;
+    int numReps = simDetails[ped].numReps;
     int numGen = simDetails[ped].numGen;
     int **numSampsToPrint = simDetails[ped].numSampsToPrint;
     int *numBranches = simDetails[ped].numBranches;
@@ -905,8 +914,12 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
     int **branchNumSpouses = simDetails[ped].branchNumSpouses;
     char *pedName = simDetails[ped].name;
 
-    for(int fam = 0; fam < numFam; fam++) {
-      Person ***curFamSamps = theSamples[ped][fam];
+    if (CmdLineOpts::dryRun)
+      // for --dry_run, only generated one replicate per pedigree
+      numReps = 1;
+
+    for(int rep = 0; rep < numReps; rep++) {
+      Person ***curRepSamps = theSamples[ped][rep];
       for(int gen = 0; gen < numGen; gen++) {
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
 	  int numNonFounders, numFounders;
@@ -917,8 +930,8 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	  for(int ind = 0; ind < numPersons; ind++) {
 
 	    // print family id (PLINK-specific) and sample id
-	    fprintf(out, "%s%d ", pedName, fam+1); // family id first
-	    printSampleId(out, simDetails[ped], fam, gen, branch, ind,
+	    fprintf(out, "%s%d ", pedName, rep+1); // family id first
+	    printSampleId(out, simDetails[ped], rep, gen, branch, ind,
 			  /*printAllGens=*/ true);
 	    fprintf(out, " ");
 
@@ -952,7 +965,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		}
 	      }
 
-	      int par0sex = curFamSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex;
+	      int par0sex = curRepSamps[ pars[0].gen ][ pars[0].branch ][ parIdx[0] ].sex;
 	      for(int p = 0; p < 2; p++) {
 		// print parent 0 first by default, but if parent 0 is female,
 		// the following will switch and print parent 1 first
@@ -960,10 +973,10 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 		// TODO: use printSampleId()
 		if (!isSpouse[ printPar ])
 		  // must be the primary person, so i1:
-		  fprintf(out, "%s%d_g%d-b%d-i1 ", pedName, fam+1,
+		  fprintf(out, "%s%d_g%d-b%d-i1 ", pedName, rep+1,
 			  pars[ printPar ].gen+1, pars[ printPar ].branch+1);
 		else
-		  fprintf(out, "%s%d_g%d-b%d-s%d ", pedName, fam+1,
+		  fprintf(out, "%s%d_g%d-b%d-s%d ", pedName, rep+1,
 			  pars[ printPar ].gen+1, pars[ printPar ].branch+1,
 			  parIdx[ printPar ]+1);
 	      }
@@ -971,7 +984,7 @@ void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 
 	    // print sex and phenotype; phenotype depends on whether the same
 	    // gets printed:
-	    int sex = theSamples[ped][fam][gen][branch][ind].sex;
+	    int sex = theSamples[ped][rep][gen][branch][ind].sex;
 	    int pheno = (numSampsToPrint[gen][branch] > 0) ? 1 : -9;
 	    fprintf(out, "%d %d\n", sex+1, pheno);
 	  }
