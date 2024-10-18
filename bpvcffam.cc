@@ -288,7 +288,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   int numInputSamples = 0;
   vector<uint8_t> sampleSexes; // to check X genotypes in males
   bool warnedHetMaleX = false;
-  vector<int> shuffHaps; // For randomizing the assigned haplotypes
+  vector<vector<int>> shuffHaps; // For randomizing the assigned haplotypes
   vector<int> extraSamples; // Sample indexes to print for --retain_extra
   // map from haplotype index / 2 to sample_index
   int *founderSamples = new int[totalFounderHaps / 2];
@@ -339,7 +339,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       }
 
       // Do math and store sample ids for --retain_extra:
-      unsigned int numExtraSamples = numInputSamples - totalFounderHaps / 2;
+      int numExtraSamples = numInputSamples - totalFounderHaps / 2;
       bool cantRetainEnough = false;
       if (CmdLineOpts::retainExtra < 0) {
 	numToRetain = numExtraSamples;
@@ -352,15 +352,22 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	}
       }
 
-      // Store ids for all extra samples -- those whose shuffled haplotype
-      // assignment is after all that will be used:
-      for(int i = 0; i < numInputSamples; i++) {
-	if (shuffHaps[i] < totalFounderHaps)
-	  founderSamples[ shuffHaps[i] / 2 ] = i;
-	else
-	  extraSamples.push_back(i);
+  // Store ids for all extra samples -- those whose shuffled haplotype
+  // assignment is after all that will be used:
+  for(int i = 0; i < numInputSamples; i++) {
+      int usedHaps = 0;
+      for (const int& hap : shuffHaps[i]){
+        if (hap < totalFounderHaps){
+          usedHaps++;
+        }
       }
-      assert(extraSamples.size() == numExtraSamples);
+
+      if (usedHaps == 0){
+        extraSamples.push_back(i);
+      }
+      }
+
+      assert(extraSamples.size() == numExtraSamples || numExtraSamples < 0);
 
       // want to randomize which samples get included, though this is only
       // relevant if we have more samples than are requested to be retained:
@@ -609,13 +616,14 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	hapAlleles[numStored++] = alleles[h];
       }
 
-      int founderIndex = shuffHaps[ inputIndex ];
-      inputIndex++;
+    std::vector<int> founderIndices = shuffHaps[ inputIndex ];
+    inputIndex++;
+    for(int founderIndex : founderIndices){
       if (founderIndex < totalFounderHaps) {
-	for(int h = 0; h < 2; h++)
-	  founderHaps[founderIndex + h] = alleles[h];
+        for(int h = 0; h < 2; h++)
+          founderHaps[founderIndex + h] = alleles[h];
       }
-
+    }
     }
 
     bool fewer = numStored < numInputSamples * 2;
@@ -772,7 +780,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 // supplied and randomizes the assignment of these samples to founders, keeping
 // sexes the same when --sexes is supplied
 void getSampleIdsShuffHaps(vector<char*> &sampleIds,
-		vector<uint8_t> &sampleSexes, vector<int> &shuffHaps,
+		vector<uint8_t> &sampleSexes, vector<vector<int>> &shuffHaps,
 		FILE *outs[2], vector<int> hapNumsBySex[2],
 		unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
 		char *&saveptr, int totalFounderHaps, const char *tab) {
@@ -790,6 +798,7 @@ void getSampleIdsShuffHaps(vector<char*> &sampleIds,
   //   Note: if the --sexes option was not used, *all* haplotype numbers end up
   //   in this index
   vector<int> sexSpecHapIdxs[3];
+
 
   // Should we assign haplotypes according to the sexes of the samples? Only
   // if we have sexes (via --sexes)
@@ -885,13 +894,12 @@ void getSampleIdsShuffHaps(vector<char*> &sampleIds,
   int curSSHapIdx[3] = { 0, 0, 0 };
   for(uint32_t i = 0; i < sampleSexes.size(); i++) {
     uint8_t curSex = sampleSexes[i];
-    shuffHaps.push_back( sexSpecHapIdxs[ curSex ][ curSSHapIdx[ curSex ] ] );
+    shuffHaps.push_back(vector<int>(1, sexSpecHapIdxs[curSex][curSSHapIdx[curSex]]));
     curSSHapIdx[curSex]++;
   }
 
   assert(shuffHaps.size() == sampleIds.size());
 }
-
 
 // print fam format file with the pedigree structure of all individuals included
 // in the simulation

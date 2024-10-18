@@ -22,19 +22,19 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int rep, int gen,
 void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	      GeneticMap &map, char *bpFile);
 int printVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	     int totalFounderHaps, const char *inVCFfile, char *outFile,
-	     GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
-	     unordered_map<const char*,uint8_t,HashString,EqString> &sexes);
+     int totalFounderHaps, const char *inVCFfile, char *outFile,
+     GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
+     unordered_map<const char*,uint8_t,HashString,EqString> &sexes);
 template<typename I_TYPE, typename O_TYPE>
 int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
-	    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
-	    GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
-	    unordered_map<const char*,uint8_t,HashString,EqString> &sexes);
+    int totalFounderHaps, const char *inVCFfile, char *outFileBuf,
+    GeneticMap &map, FILE *outs[2], vector<int> hapNumsBySex[2],
+    unordered_map<const char*,uint8_t,HashString,EqString> &sexes);
 void getSampleIdsShuffHaps(vector<char*> &sampleIds,
-		vector<uint8_t> &sampleSexes, vector<int> &shuffHaps,
-		FILE *outs[2], vector<int> hapNumsBySex[2],
-		unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
-		char *&saveptr, int totalFounderHaps, const char *tab);
+        vector<uint8_t> &sampleSexes, vector<vector<int>> &shuffHaps,
+        FILE *outs[2], vector<int> hapNumsBySex[2],
+        unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
+        char *&saveptr, int totalFounderHaps, const char *tab);
 void printFam(vector<SimDetails> &simDetails, Person *****theSamples,
 	      const char *famFile);
 template<typename T>
