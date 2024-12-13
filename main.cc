@@ -91,6 +91,13 @@ int main(int argc, char **argv) {
       fprintf(outs[o], "  Pseudo-haploid rate:\t%.1lg\n\n",
 	      CmdLineOpts::pseudoHapRate);
 
+      if (CmdLineOpts::vcfSexesFile || CmdLineOpts::setFoundersFile) {
+        if (CmdLineOpts::vcfSexesFile)
+          fprintf(outs[o], "  Sexes file:\t\t%s\n", CmdLineOpts::vcfSexesFile);
+        if (CmdLineOpts::setFoundersFile)
+          fprintf(outs[o], "  Set founders file:\t%s\n", CmdLineOpts::setFoundersFile);
+        fprintf(outs[o], "\n");
+      }
       if (CmdLineOpts::retainExtra < 0) {
 	fprintf(outs[o], "  Retaining all unused samples in output VCF\n");
       }
@@ -106,6 +113,15 @@ int main(int argc, char **argv) {
       }
       else {
 	fprintf(outs[o], "  Output VCF will contain unphased data\n\n");
+      }
+    }
+    else {
+      if (CmdLineOpts::vcfSexesFile || CmdLineOpts::setFoundersFile) {
+        if (CmdLineOpts::vcfSexesFile)
+          fprintf(outs[o], "  WARNING: Sexes file ignored -- no input VCF\n");
+        if (CmdLineOpts::setFoundersFile)
+          fprintf(outs[o], "  WARNING: Set founders file ignored -- no input VCF\n");
+        fprintf(outs[o], "\n");
       }
     }
   }
@@ -134,13 +150,15 @@ int main(int argc, char **argv) {
     if (CmdLineOpts::vcfSexesFile && !haveXmap) {
       for(int o = 0; o < 2; o++) {
 	fprintf(outs[o], "WARNING: input VCF supplied and a sexes file, but no X chromosome genetic map\n");
-	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
+	fprintf(outs[o], "         output VCF will *not* include X chromosome data and will *not* match\n");
+	fprintf(outs[o], "         sexes\n\n");
       }
     }
     else if (!CmdLineOpts::vcfSexesFile && haveXmap) { // reverse of above
       for(int o = 0; o < 2; o++) {
 	fprintf(outs[o], "WARNING: input VCF supplied and an X chromosome genetic map, but no --sexes file\n");
-	fprintf(outs[o], "         output VCF will *not* include X chromosome data\n\n");
+	fprintf(outs[o], "         output VCF will *not* include X chromosome data and will *not* match\n");
+	fprintf(outs[o], "         sexes\n\n");
       }
     }
     else if (CmdLineOpts::vcfSexesFile)
@@ -243,7 +261,7 @@ int main(int argc, char **argv) {
       fprintf(outs[o], "Reading input VCF meta data... ");
       fflush(outs[o]);
     }
-    // note: printVCF()'s callee makeVCF() print the status for generating the
+    // note: printVCF()'s callee makeVCF() prints the status for generating the
     // VCF file
 
     int ret = printVCF(simDetails, theSamples, totalFounderHaps,

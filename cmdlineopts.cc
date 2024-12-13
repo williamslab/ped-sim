@@ -34,6 +34,7 @@ int    CmdLineOpts::printFounderIds = 0;
 char  *CmdLineOpts::fixedCOfile = NULL;
 char  *CmdLineOpts::chrX = NULL;
 char  *CmdLineOpts::vcfSexesFile = NULL;
+char  *CmdLineOpts::setFoundersFile = NULL;
 
 // Parses the command line options for the program.
 bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
@@ -47,6 +48,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     PSEUDO_HAP_RATE,
     FIXED_CO,
     SEXES,
+    SET_FOUNDERS,
   };
 
   // This is a local variable because whenever <interfereFile> is NULL, the
@@ -72,6 +74,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"err_hom_rate", required_argument, NULL, ERR_HOM_RATE},
     {"miss_rate", required_argument, NULL, MISS_RATE},
     {"pseudo_hap", required_argument, NULL, PSEUDO_HAP_RATE},
+    {"set_founders", required_argument, NULL, SET_FOUNDERS},
 #ifndef NOFIXEDCO
     {"fixed_co", required_argument, NULL, FIXED_CO},
 #endif // NOFIXEDCO
@@ -223,6 +226,15 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
 	}
 	vcfSexesFile = optarg;
 	break;
+      case SET_FOUNDERS:
+	if (setFoundersFile != NULL) {
+	  if (haveGoodArgs)
+	    fprintf(stderr, "\n");
+	  fprintf(stderr, "ERROR: multiple definitions of the founder assignment file\n");
+	  haveGoodArgs = false;
+	}
+	setFoundersFile = optarg;
+	break;
 
       case '?':
 	// bad option; getopt_long already printed error message
@@ -345,6 +357,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\n");
   fprintf(out, "  --keep_phase\t\toutput VCF with phase information (defaults to unphased)\n");
   fprintf(out, "\n");
+  fprintf(out, "  --set_founders <filename>  specify input VCF id to assign to Ped-sim founders\n");
   fprintf(out, "  --founder_ids\t\tprint ids of founders to output file <prefix>.ids\n");
   fprintf(out, "\n");
   fprintf(out, "  --retain_extra <#>\toutput samples not used as founders to VCF file\n");
