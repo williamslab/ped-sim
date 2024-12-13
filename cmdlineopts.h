@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.4.2"
-#define RELEASE_DATE	"24 Aug 2024"
+#define VERSION_NUMBER	"1.4.5"
+#define RELEASE_DATE	"13 Dec 2024"
 
 class CmdLineOpts {
   public:
@@ -93,6 +93,10 @@ class CmdLineOpts {
 
     // File with sexes of input VCF samples
     static char *vcfSexesFile;
+
+    // File specifying which VCF samples should be assigned to some/all of the
+    // Ped-sim founders
+    static char *setFoundersFile;
 };
 
 #endif // CMDOPTIONS_H

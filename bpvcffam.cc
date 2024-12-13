@@ -29,7 +29,7 @@ void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
   size_t bytesRead = 1024;
   char *buffer = (char *) malloc(bytesRead + 1);
   if (buffer == NULL) {
-    fprintf(stderr, "ERROR: out of memory");
+    fprintf(stderr, "ERROR: out of memory\n");
     exit(5);
   }
   const char *delim = " \t\n";
@@ -59,7 +59,7 @@ void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
 
     char *storeId = new char[ strlen(id) + 1 ]; // +1 for '\0'
     if (storeId == NULL) {
-      fprintf(stderr, "ERROR: out of memory");
+      fprintf(stderr, "ERROR: out of memory\n");
       exit(5);
     }
     strcpy(storeId, id);
@@ -75,6 +75,8 @@ void readSexes(unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
 
 // Prints the sample id of the given sample to <out>.
 // Returns true if the sample is a founder, false otherwise.
+// TODO: ideally refactor with getSampleId using templates for the first
+//       argument and, e.g., `if (std::is_same<T, FILE *>::value) {  }`
 template<class IO_TYPE>
 bool printSampleId(FILE *out, SimDetails &pedDetails, int rep, int gen,
 		   int branch, int ind, bool printAllGens,
@@ -101,6 +103,38 @@ bool printSampleId(FILE *out, SimDetails &pedDetails, int rep, int gen,
       else
 	gzOut->printf("%s%d_g%d-b%d-i%d", pedDetails.name, rep+1, gen+1,
 		      branch+1, ind - thisBranchNumSpouses + 1);
+    }
+    if (gen == 0 || pedDetails.branchParents[gen][branch*2].branch < 0) {
+      assert(ind - thisBranchNumSpouses == 0);
+      return true; // is a founder
+    }
+    return false;
+  }
+}
+
+// Prints the sample id of the given sample to the string <id>.
+// Returns true if the sample is a founder, false otherwise.
+bool getSampleId(char *id, const int MAX_LEN, SimDetails &pedDetails, int rep,
+		 int gen, int branch, int ind) {
+  int thisBranchNumSpouses = getBranchNumSpouses(pedDetails, gen, branch);
+
+  if (ind < thisBranchNumSpouses) {
+    int n = snprintf(id, MAX_LEN, "%s%d_g%d-b%d-s%d", pedDetails.name, rep+1,
+		     gen+1, branch+1, ind+1);
+    if (n >= MAX_LEN) {
+      fprintf(stderr, "ERROR: a Ped-sim id is longer than %d bytes and exceeds allotted space\n",
+	      MAX_LEN);
+      exit(10);
+    }
+    return true; // is a founder
+  }
+  else {
+    int n = snprintf(id, MAX_LEN, "%s%d_g%d-b%d-i%d", pedDetails.name, rep+1,
+		     gen+1, branch+1, ind - thisBranchNumSpouses + 1);
+    if (n >= MAX_LEN) {
+      fprintf(stderr, "ERROR: a Ped-sim id is longer than %d bytes and exceeds allotted space\n",
+	      MAX_LEN);
+      exit(10);
     }
     if (gen == 0 || pedDetails.branchParents[gen][branch*2].branch < 0) {
       assert(ind - thisBranchNumSpouses == 0);
@@ -273,7 +307,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   char **hapAlleles = NULL; // stores all alleles from input sample
   char **founderHaps = new char*[totalFounderHaps]; // alleles for founder haps
   if (founderHaps == NULL) {
-    fprintf(stderr, "ERROR: out of memory");
+    fprintf(stderr, "ERROR: out of memory\n");
     exit(5);
   }
 
@@ -286,15 +320,23 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   bool gotSomeData = false;
 
   int numInputSamples = 0;
-  vector<uint8_t> sampleSexes; // to check X genotypes in males
+  // maps VCF sample index to sex (0 => M, 1 => F, 2 => unknown)
+  vector<uint8_t> vcfSampleSexes; // to check X genotypes in males
   bool warnedHetMaleX = false;
-  vector<int> shuffHaps; // For randomizing the assigned haplotypes
+  // For randomizing the assigned haplotypes or assigning VCF ids to founders
+  // based on --set_founders
+  vector<vector<int>> vcfIdx2FounderHap;
   vector<int> extraSamples; // Sample indexes to print for --retain_extra
-  // map from haplotype index / 2 to sample_index
-  int *founderSamples = new int[totalFounderHaps / 2];
-  if (founderSamples == NULL) {
-    fprintf(stderr, "ERROR: out of memory");
+  // map from founder haplotype index / 2 to VCF sample index
+  // (inverse of vcfIdx2FounderHap [though stores founder haplotype index/2)
+  int *founderHap2VcfIdx = new int[totalFounderHaps / 2];
+  if (founderHap2VcfIdx == NULL) {
+    fprintf(stderr, "ERROR: out of memory\n");
     exit(5);
+  }
+  else {
+    for (int i = 0 ; i < totalFounderHaps / 2; i++)
+      founderHap2VcfIdx[i] = -1;
   }
   // number of elements of <extraSamples> to print (see below)
   unsigned int numToRetain = 0;
@@ -325,21 +367,49 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int i = 1; i < 9; i++)
 	strtok_r(NULL, tab, &saveptr);
 
-      // now parse / store the sample ids and get randomized haplotypes in a way
-      // that respects the sex of the input samples when necessary
-      vector<char*> sampleIds;
-      getSampleIdsShuffHaps(sampleIds, sampleSexes, shuffHaps, outs,
-			    hapNumsBySex, sexes, saveptr, totalFounderHaps,tab);
+      // map of Ped-sim sample ids to their Person* entry (only for founders)
+      // this is only needed and non-empty if the below condition is true
+      unordered_map<const char*,Person*,HashString,EqString> simId2Person;
+      if (CmdLineOpts::setFoundersFile != NULL)
+	assignSimId2Person(simId2Person, simDetails, theSamples);
 
-      numInputSamples = sampleIds.size();
+      // now parse / store the VCF sample ids and either assign founders to
+      // the specific VCF ids (based on the --set_founders argument) or
+      // randomize haplotypes in a way that respects the sex of the input
+      // samples when necessary (or do both if some founders are not listed in
+      // the --set_founders file)
+      vector<char*> vcfIds;
+      uint32_t numDupVcfIds = getSampleIdsShuffHaps(vcfIds, vcfSampleSexes,
+                                simId2Person, vcfIdx2FounderHap, outs,
+                                hapNumsBySex, sexes, saveptr, totalFounderHaps,
+                                tab);
+
+      numInputSamples = vcfIds.size();
       hapAlleles = new char*[numInputSamples * 2]; // 2 for diploid samples
       if (hapAlleles == NULL) {
-	fprintf(stderr, "ERROR: out of memory");
+	fprintf(stderr, "ERROR: out of memory\n");
 	exit(5);
       }
 
-      // Do math and store sample ids for --retain_extra:
-      unsigned int numExtraSamples = numInputSamples - totalFounderHaps / 2;
+      // Store ids for all samples not assigned to a simulated founder
+      // and fill in founderHap2VcfIdx array
+      for(int i = 0; i < numInputSamples; i++) {
+	bool assignedToFounder = false;
+	for (int founderHap : vcfIdx2FounderHap[i]) {
+	  if (founderHap < totalFounderHaps) {
+	    assignedToFounder = true;
+	    founderHap2VcfIdx[founderHap / 2] = i;
+	  }
+	}
+
+	if (!assignedToFounder)
+	  extraSamples.push_back(i);
+      }
+
+      uint32_t numExtraSamples = extraSamples.size();
+      assert(numExtraSamples == numInputSamples -
+                                          (totalFounderHaps/2 - numDupVcfIds));
+
       bool cantRetainEnough = false;
       if (CmdLineOpts::retainExtra < 0) {
 	numToRetain = numExtraSamples;
@@ -351,16 +421,6 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	  numToRetain = numExtraSamples;
 	}
       }
-
-      // Store ids for all extra samples -- those whose shuffled haplotype
-      // assignment is after all that will be used:
-      for(int i = 0; i < numInputSamples; i++) {
-	if (shuffHaps[i] < totalFounderHaps)
-	  founderSamples[ shuffHaps[i] / 2 ] = i;
-	else
-	  extraSamples.push_back(i);
-      }
-      assert(extraSamples.size() == numExtraSamples);
 
       // want to randomize which samples get included, though this is only
       // relevant if we have more samples than are requested to be retained:
@@ -385,7 +445,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       for(int o = 0; o < 2; o++) {
 	fprintf(outs[o], "done.\n"); // initial scan of VCF file (see main())
 	fprintf(outs[o], "  Input contains %d samples, using %d as founders, and retaining %d\n",
-		numInputSamples, totalFounderHaps / 2, numToRetain);
+		numInputSamples, totalFounderHaps/2-numDupVcfIds, numToRetain);
 	if (cantRetainEnough) {
 	  fprintf(outs[o], "  Note: cannot retain all requested %d samples\n",
 		  CmdLineOpts::retainExtra);
@@ -436,8 +496,9 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 				      haps[1][/*chrIdx=*/0].front().foundHapNum;
 		    hapNum--; // hap index 1 is an odd number, so we decrement
 		    assert(hapNum % 2 == 0);
-		    int founderIdx = founderSamples[ hapNum / 2 ];
-		    fprintf(idOut, "\t%s\n", sampleIds[ founderIdx ]);
+		    int founderIdx = founderHap2VcfIdx[ hapNum / 2 ];
+		    assert(founderIdx >= 0);
+		    fprintf(idOut, "\t%s\n", vcfIds[ founderIdx ]);
 		  }
 
 		}
@@ -447,7 +508,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       // print the ids for the --retain_extra samples:
       for(unsigned int i = 0; i < numToRetain; i++) {
 	int sampIdx = extraSamples[i];
-	out.printf("\t%s", sampleIds[ sampIdx ]);
+	out.printf("\t%s", vcfIds[ sampIdx ]);
       }
 
       out.printf("\n");
@@ -566,7 +627,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
       alleles[0] = strtok_r(theGT, bar, &saveptrAlleles);
       alleles[1] = strtok_r(NULL, bar, &saveptrAlleles);
 
-      if (map.isX(chrIdx) && sampleSexes[inputIndex] == 0) {
+      if (map.isX(chrIdx) && vcfSampleSexes[inputIndex] == 0) {
 	if (alleles[1] == NULL) {
 	  alleles[1] = alleles[0];
 	}
@@ -609,11 +670,16 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
 	hapAlleles[numStored++] = alleles[h];
       }
 
-      int founderIndex = shuffHaps[ inputIndex ];
+      // if this VCF sample has been assigned to >= 1 Ped-sim founders, store
+      // the alleles we read in that/those founder haplotypes
+      vector<int> &founderIndices = vcfIdx2FounderHap[ inputIndex ];
       inputIndex++;
-      if (founderIndex < totalFounderHaps) {
-	for(int h = 0; h < 2; h++)
-	  founderHaps[founderIndex + h] = alleles[h];
+
+      for(int founderIndex : founderIndices) {
+	if (founderIndex < totalFounderHaps) {
+	  for(int h = 0; h < 2; h++)
+	    founderHaps[founderIndex + h] = alleles[h];
+	}
       }
 
     }
@@ -751,7 +817,7 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
     for(unsigned int i = 0; i < numToRetain; i++) {
       int sampIdx = extraSamples[i];
       int numHaps = 2;
-      if (map.isX(chrIdx) && sampleSexes[sampIdx] == 0)
+      if (map.isX(chrIdx) && vcfSampleSexes[sampIdx] == 0)
 	// male X: haploid output per VCF spec
 	numHaps = 1;
       for(int h = 0; h < numHaps; h++)
@@ -767,131 +833,394 @@ int makeVCF(vector<SimDetails> &simDetails, Person *****theSamples,
   return 0;
 }
 
-// Reads the sample ids from the VCF, stores them for printing the .ids file
-// and any --retain_extra samples. Also maps them to sexes if --sexes was
-// supplied and randomizes the assignment of these samples to founders, keeping
-// sexes the same when --sexes is supplied
-void getSampleIdsShuffHaps(vector<char*> &sampleIds,
-		vector<uint8_t> &sampleSexes, vector<int> &shuffHaps,
-		FILE *outs[2], vector<int> hapNumsBySex[2],
-		unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
-		char *&saveptr, int totalFounderHaps, const char *tab) {
-  // Need to randomly assign these samples to founder haplotypes.
-  // <hapNumsBySex> contains all the haplotype numbers distinguished by the sex
-  // of the founder. If the sexes of the VCF samples is known (in <sexes>), we
-  // assign consistent with sex. Otherwise, it is fully randomized.
+// Fills <simId2Person>, a map from Ped-sim founder ids (strings) to their
+// Person* entry in <theSamples>.
+void assignSimId2Person(
+    unordered_map<const char*,Person*,HashString,EqString> &simId2Person,
+    vector<SimDetails> &simDetails, Person *****theSamples) {
+  // all Ped-sim ids should fit in this; if not, we'll throw an error
+  static const int BUF_SIZE = 1024 * 50;
+  char idBuf[BUF_SIZE];
 
-  // Begin by putting the sex specific haplotype indexes in <sexSpecHapIdxs>.
-  // This differs from <hapNumsBySex> in that:
-  // - The number of entries in [0] and [1] is equal to the number of males
-  //   and females in the VCF file (<hapNumsBySex> has the number of simulated
-  //   samples)
-  // - Index [2] contains the number of input samples without sex assignments
-  //   Note: if the --sexes option was not used, *all* haplotype numbers end up
-  //   in this index
-  vector<int> sexSpecHapIdxs[3];
+  // map of Ped-sim sample ids to their founder haplotype number (only for
+  // founders)
+  for(unsigned int ped = 0; ped < simDetails.size(); ped++) {
+    int numReps = simDetails[ped].numReps;
+    int numGen = simDetails[ped].numGen;
+    int **numSampsToPrint = simDetails[ped].numSampsToPrint;
+    int *numBranches = simDetails[ped].numBranches;
+    Parent **branchParents = simDetails[ped].branchParents;
+    int **branchNumSpouses = simDetails[ped].branchNumSpouses;
+
+    for(int rep = 0; rep < numReps; rep++) {
+      for(int gen = 0; gen < numGen; gen++) {
+	for(int branch = 0; branch < numBranches[gen]; branch++) {
+	  int numNonFounders, numFounders;
+	  getPersonCounts(gen, numGen, branch, numSampsToPrint,
+			  branchParents, branchNumSpouses, numFounders,
+			  numNonFounders);
+	  int numPersons = numNonFounders + numFounders;
+	  // TODO: optimization: should we just go to <numFounders>?
+	  for(int ind = 0; ind < numPersons; ind++) {
+	    // print Ped-sim id to <idBuf>
+	    bool curIsFounder = getSampleId(idBuf, BUF_SIZE, simDetails[ped],
+					    rep, gen, branch, ind);
+            if (!curIsFounder)
+              continue;
+
+            char *storeId = new char[ strlen(idBuf) + 1 ]; // +1 for '\0'
+            if (storeId == NULL) {
+              fprintf(stderr, "ERROR: out of memory\n");
+              exit(5);
+            }
+            strcpy(storeId, idBuf);
+
+            Person *thisPerson = &theSamples[ped][rep][gen][branch][ind];
+            simId2Person[storeId] = thisPerson;
+	  }
+	}
+      }
+    }
+  }
+
+}
+
+// Reads and does associated bookkeeping for the founder sample assignments
+// given in <CmdLineOpts::setFoundersFile> (if present).
+// Checks that the VCF sample counts (including sexes where supplied) are
+// sufficient for the simulation.
+// Places founder haplotypes not assigned via <CmdLineOpts::setFoundersFile> in
+// <hapNumsToShuf> for shuffling and assigning to VCF ids by the caller.
+// Returns the number of founders that were assigned to a VCF id already
+// assigned to another founder
+uint32_t setFoundersHapsToShuf(
+          unordered_map<const char*,Person*,HashString,EqString> &simId2Person,
+          unordered_map<const char*,uint32_t,HashString,EqString> &vcfId2index,
+          unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
+          vector<vector<int>> &vcfIdx2FounderHap,
+          vector<int> hapNumsToShuf[3], vector<int> hapNumsBySex[2],
+          int totalFounderHaps, uint32_t vcfSexCounts[3]) {
+  // Should we assign haplotypes according to the sexes of the samples?
+  bool respectSexes = sexes.size() > 0;
+
+  unordered_set<int> assignedFounderHaps;
+  int vcfIdsAssigned[3] = { 0, 0, 0 };
+  // number of multiple assignments of VCF id; if a sample is assigned twice,
+  // that leads to only 1 count below
+  uint32_t dupVcfIds[3] = { 0, 0, 0 };
+
+  if (CmdLineOpts::setFoundersFile) {
+    FILE *in = fopen(CmdLineOpts::setFoundersFile, "r");
+    if (!in) {
+      fprintf(stderr, "\nERROR: could not open set_founders file %s!\n",
+              CmdLineOpts::setFoundersFile);
+      perror("open");
+      exit(1);
+    }
+
+    size_t bytesRead = 1024;
+    char *buffer = (char *) malloc(bytesRead + 1);
+    if (buffer == NULL) {
+      fprintf(stderr, "ERROR: out of memory\n");
+      exit(5);
+    }
+    const char *delim = " \t\n";
+
+    int line = 0;
+    while (getline(&buffer, &bytesRead, in) >= 0) {
+      line++;
+
+      char *simId, *vcfId, *saveptr;
+      // read Ped-sim id
+      simId = strtok_r(buffer, delim, &saveptr);
+      if (simId == NULL || simId[0] == '#')
+        // blank line or comment -- skip
+        continue;
+
+      // ... and VCF id
+      vcfId = strtok_r(NULL, delim, &saveptr);
+      if (vcfId == NULL || strtok_r(NULL, delim, &saveptr) != NULL) {
+        fprintf(stderr, "\nERROR: line %d in set_founders file: expect two fields per line:\n",
+                line);
+        fprintf(stderr, "       [Ped-sim id] [VCF id]\n");
+        exit(6);
+      }
+
+      // look up founder haplotype for <simId>
+      auto simIdEntry = simId2Person.find(simId);
+      if (simIdEntry == simId2Person.end()) {
+        fprintf(stderr, "\nERROR: line %d in set_founders file: %s is either not a\n",
+                line, simId);
+        fprintf(stderr, "       valid Ped-sim id or is not a founder\n");
+        exit(5);
+      }
+      Person *thisPerson = simIdEntry->second;
+      // since males on the X chromosome only have a defined
+      // haplotype for haps index 1, we use that index
+      int foundHapNum = thisPerson->haps[1][/*chrIdx=*/0].front().foundHapNum;
+      foundHapNum--; // hap index 1 is an odd number, so we decrement
+      assert(foundHapNum % 2 == 0);
+
+      // ensure this founder haplotype (i.e., simId) wasn't assigned already
+      auto assignEntry = assignedFounderHaps.find(foundHapNum); 
+      if (assignEntry != assignedFounderHaps.end()) {
+        fprintf(stderr, "\nERROR: line %d in set_founders file: Ped-sim founder id %s\n",
+                line, simId);
+        fprintf(stderr, "       assigned multiple times\n");
+        exit(5);
+      }
+      assignedFounderHaps.insert(foundHapNum);
+
+      // look up the index for <vcfId>
+      auto vcfIdEntry = vcfId2index.find(vcfId);
+      if (vcfIdEntry == vcfId2index.end()) {
+        fprintf(stderr, "\nERROR: line %d in set_founders file: %s is not an id in the input VCF\n",
+                line, vcfId);
+        exit(5);
+      }
+      uint32_t vcfIndex = vcfIdEntry->second;
+
+      uint8_t vcfSex = 2; // updated below if we're respecting sexes
+      if (respectSexes) {
+        // check that the sex of the Ped-sim id is the same as the person in the
+        // VCF file
+        auto sexEntry = sexes.find(vcfId);
+        if (sexEntry != sexes.end()) {
+          vcfSex = sexEntry->second;
+          if (vcfSex != thisPerson->sex) {
+            fprintf(stderr, "\nERROR: line %d in set_founders file: sexes of Ped-sim sample\n",
+                    line);
+            fprintf(stderr, "       %s and VCF sample %s do not match\n",
+                    simId, vcfId);
+            exit(5);
+          }
+        }
+        else {
+          fprintf(stderr, "\nERROR: line %d in set_founders file: --sexes option given, but VCF id\n",
+                  line);
+          fprintf(stderr, "       %s does not have a sex assigned in the sexes file so\n",
+                  vcfId);
+          fprintf(stderr, "       cannot be assigned to a founder\n");
+          exit(5);
+        }
+      }
+
+      vcfIdx2FounderHap[vcfIndex].push_back(foundHapNum);
+      if (vcfIdx2FounderHap[vcfIndex].size() == 1)
+        // only count this VCF id if <founderHapNum> was the first assignment to
+        // this id
+        vcfIdsAssigned[vcfSex]++;
+      else
+        dupVcfIds[vcfSex]++;
+    }
+
+    free(buffer);
+    fclose(in);
+  }
+
+  // check for errors in sex counts
+  if (respectSexes) {
+    for (int sex = 0; sex <= 1; sex++) {
+      // we subtract dupVcfIds[sex] since the haplotypes so assigned do not need
+      // to be counted
+      if (vcfSexCounts[sex] < hapNumsBySex[sex].size() - dupVcfIds[sex]) {
+        fprintf(stderr, "\nERROR: need at least %lu females and %lu males to simulate, but the VCF\n",
+            hapNumsBySex[1].size() - dupVcfIds[1],
+            hapNumsBySex[0].size() - dupVcfIds[0]);
+        fprintf(stderr, "       only contains %d females and %d males as specified by the sexes file\n",
+            vcfSexCounts[1], vcfSexCounts[0]);
+        fprintf(stderr, "       Note: it is always possible to run without an input VCF or to get\n");
+        fprintf(stderr, "       autosomal genotypes by running without the --sexes option\n");
+        exit(5);
+      }
+    }
+  }
+  else {
+    // Simulating hap count / 2 individuals
+    // subtract dupVcfIds[2] -- haplotypes so assigned do not need to be counted
+    if (vcfIdx2FounderHap.size() < totalFounderHaps / 2 - dupVcfIds[2]) {
+      fprintf(stderr, "\nERROR: need %d founders, but input only contains %lu samples\n",
+	  totalFounderHaps / 2 - dupVcfIds[2], vcfIdx2FounderHap.size());
+      exit(5);
+    }
+  }
+
+
+  // assumed below
+  assert((uint32_t) totalFounderHaps/2 == hapNumsBySex[0].size() + hapNumsBySex[1].size());
+
+  // For all Ped-sim founders that weren't assigned above, add them to
+  // <hapNumsToShuf>:
+  for (int sex = 0; sex <= 1; sex++) {
+    // If <respectSexes>, we'll put the haplotype numbers in the corresponding
+    // sex index in <hapNumsToShuf>; otherwise, we're not worried about the
+    // sex of the VCF smaples, and all individuals go in <hapNumsToShuf[2]>:
+    uint8_t sexToAssign = (respectSexes) ? sex : 2;
+    uint32_t numHapsThisSex = hapNumsBySex[sex].size();
+    for (uint32_t i = 0; i < numHapsThisSex; i++) {
+      // check whether this haplotype has been assigned
+      auto assignEntry = assignedFounderHaps.find(hapNumsBySex[sex][i]); 
+      if (assignEntry != assignedFounderHaps.end())
+        // already assigned: skip
+        continue;
+
+      hapNumsToShuf[sexToAssign].push_back(hapNumsBySex[sex][i]);
+    }
+    assert(hapNumsToShuf[sexToAssign].size() <= vcfSexCounts[sexToAssign] - vcfIdsAssigned[sexToAssign]);
+  }
+
+  // Need the same number of entries in <hapNumsToShuf> as there are individuals
+  // of each sex, though we must subtract the number of VCF individuals already
+  // assigned above
+  int numVCFids = vcfSexCounts[0] + vcfSexCounts[1] + vcfSexCounts[2];
+  int numVCFidsAssigned = vcfIdsAssigned[0] + vcfIdsAssigned[1] + vcfIdsAssigned[2];
+  int numShufHaps = (int) hapNumsToShuf[0].size() + hapNumsToShuf[1].size() + hapNumsToShuf[2].size();
+  for(uint8_t sexToAssign = 0; sexToAssign <= 2; sexToAssign++) {
+    while (true) {
+      if (numShufHaps >= numVCFids - numVCFidsAssigned) {
+        // done: should have sum(hapNumsToShuf[*].size()) == numVCFids (minus
+        // VCF ids already assigned)
+        assert(hapNumsToShuf[0].size() + hapNumsToShuf[1].size() + hapNumsToShuf[2].size() ==
+               (uint32_t) numVCFids - numVCFidsAssigned);
+        break;
+      }
+      if (sexToAssign < 2 &&
+          hapNumsToShuf[sexToAssign].size() >=
+                    vcfSexCounts[sexToAssign] - vcfIdsAssigned[sexToAssign])
+        // done with <sexToAssign>
+        break;
+
+      // haplotype numbers >= totalFounderHaps are not assigned to founders, so
+      // VCF ids that are assigned this number won't be assigned to founders
+      hapNumsToShuf[sexToAssign].push_back(totalFounderHaps);
+      numShufHaps++;
+    }
+
+    assert(hapNumsToShuf[sexToAssign].size() == vcfSexCounts[sexToAssign] - vcfIdsAssigned[sexToAssign]);
+  }
+
+  return dupVcfIds[0] + dupVcfIds[1] + dupVcfIds[2];
+}
+
+// Reads the sample ids from the VCF and stores them for printing the .ids file
+// and any --retain_extra samples. Also maps them to sexes if --sexes was
+// supplied. Next assigns VCF samples to founders by:
+// (a) performing the assignments given in the --set_founders file, and/or
+// (b) randomly assigning these samples to founders (i.e., founders not assigned
+//     in any --set_founders file).
+// For both the above, the code ensures that the sexes of the VCF sample and the
+// founder are same when --sexes is supplied.
+uint32_t getSampleIdsShuffHaps(vector<char*> &vcfIds,
+        vector<uint8_t> &vcfSampleSexes,
+        unordered_map<const char*,Person*,HashString,EqString> &simId2Person,
+        vector<vector<int>> &vcfIdx2FounderHap, FILE *outs[2],
+        vector<int> hapNumsBySex[2],
+        unordered_map<const char*,uint8_t,HashString,EqString> &sexes,
+        char *&saveptr, int totalFounderHaps, const char *tab) {
+  // Need to:
+  // (a) perform any assignments given in the --set_founders file and
+  // (b) randomly assign the VCF samples to any unspecified founder haplotypes
+  //
+  // <hapNumsBySex> contains all the founder haplotype numbers distinguished
+  // by founder sex. If the sexes of the VCF samples are known (in <sexes>), we
+  // assign consistent with sex. Otherwise, we ignore sexes.
 
   // Should we assign haplotypes according to the sexes of the samples? Only
   // if we have sexes (via --sexes)
   bool respectSexes = sexes.size() > 0;
 
-  // what is the next index in <hapNumsBySex> that should be assigned to
-  // <sexSpecHapIdxs>?
-  int hapNumsIdx[2] = { 0, 0 };
-  for(int sex = 0; sex < 2; sex++)
-    if (hapNumsBySex[sex].size() == 0)
-      hapNumsIdx[sex] = -1; // none to assign
+  // Is there a file specifying which VCF ids should be assigned to founders?
+  bool settingFounders = CmdLineOpts::setFoundersFile != NULL;
 
-  // What is the index of the next any-sex haplotype to assign. If
-  // <respectSexes>, it's the one immediately following the last haplotype
-  // assigned (i.e., <totalFounderHaps>). Otherwise, all get assigned to
-  // sexSpecHapIdxs[2], and we start from index 0.
-  int nextAnySexHap;
-  if (respectSexes)
-    nextAnySexHap = totalFounderHaps;
-  else
-    nextAnySexHap = 0;
+  // How many VCF samples of each sex do we have?
+  uint32_t vcfSexCounts[3] = { 0, 0, 0 };
+  char *id;
+  // map of VCF sample id to the sample's index in the VCF (i.e., the column);
+  // only defined if <settingFounders>
+  unordered_map<const char*,uint32_t,HashString,EqString> vcfId2index;
+  while ((id = strtok_r(NULL, tab, &saveptr))) { // read next VCF id
+    int vcfIdIndex = vcfIds.size();
+    vcfIds.push_back(id);
 
-  uint32_t sexCounts[3] = { 0, 0, 0 };
-  char *token;
-  while ((token = strtok_r(NULL, tab, &saveptr))) {
-    sampleIds.push_back(token);
+    if (settingFounders) {
+      char *storeId = new char[ strlen(id) + 1 ]; // +1 for '\0'
+      if (storeId == NULL) {
+	fprintf(stderr, "ERROR: out of memory\n");
+	exit(5);
+      }
+      strcpy(storeId, id);
+
+      vcfId2index[ storeId ] = vcfIdIndex;
+    }
 
     uint8_t sexIdx = 2;
     if (respectSexes) {
-      auto sexEntry = sexes.find(token);
+      auto sexEntry = sexes.find(id);
       if (sexEntry != sexes.end())
 	sexIdx = sexEntry->second;
     }
-    if (sexIdx < 2 && hapNumsIdx[sexIdx] >= 0) {
-      sexSpecHapIdxs[sexIdx].push_back(
-				  hapNumsBySex[sexIdx][ hapNumsIdx[ sexIdx ] ]);
-      hapNumsIdx[sexIdx]++;
-      if (hapNumsIdx[sexIdx] >= (int) hapNumsBySex[sexIdx].size())
-	hapNumsIdx[sexIdx] = -1; // no more haplotypes to assign of this sex
-    }
-    else {
-      sexSpecHapIdxs[sexIdx].push_back(nextAnySexHap);
-      // increment by 2 because these are for pairs of haplotypes
-      // (only even numbers are stored in <hapNumsBySex>)
-      nextAnySexHap += 2;
-    }
-    sampleSexes.push_back(sexIdx);
-    sexCounts[sexIdx]++;
+    vcfSampleSexes.push_back(sexIdx);
+    vcfSexCounts[sexIdx]++;
   }
+  int numVCFids = (int) vcfIds.size();
 
-  if (respectSexes && sexCounts[2] > 0) {
+  if (respectSexes && vcfSexCounts[2] > 0) {
     for(int o = 0; o < 2; o++)
       fprintf(outs[o], "\nWARNING: %u samples in the VCF did not have sexes assigned\n",
-	      sexCounts[2]);
+              vcfSexCounts[2]);
   }
 
-  if (respectSexes) {
-    if (hapNumsIdx[0] >= 0 || hapNumsIdx[1] >= 0) {
-      if (sexCounts[2] == 0)
-	fprintf(stderr, "\n");
-      fprintf(stderr, "ERROR: need at least %lu females and %lu males to simulate, but the VCF\n",
-	      hapNumsBySex[1].size(), hapNumsBySex[0].size());
-      fprintf(stderr, "       only contains %d females and %d males as specified by the sexes file\n",
-	      sexCounts[1], sexCounts[0]);
-      fprintf(stderr, "       Note: it is always possible to run without an input VCF or to get\n");
-      fprintf(stderr, "       autosomal genotypes by running without the --sexes option\n");
-      exit(5);
-    }
-  }
-  else {
-    if (nextAnySexHap < totalFounderHaps) {
-      // Sample count is hap count / 2
-      fprintf(stderr, "\nERROR: need %d founders, but input only contains %d samples\n",
-	  totalFounderHaps / 2, nextAnySexHap / 2);
-      exit(5);
-    }
-  }
+  // Make space in <vcfIdx2FounderHap> to store the mapping for each VCF sample
+  vcfIdx2FounderHap.reserve(numVCFids);
+  for (int i = 0; i < numVCFids; i++)
+    vcfIdx2FounderHap.emplace_back();
+
+  // For use with shuffling the founder haplotype assignments to individuals in
+  // the VCF: store the sex-specific founder haplotype numbers. Once full:
+  // - Elements [0] and [1] will have the same number of elements as the
+  //   corresponding numbers of males and females in the VCF and include all
+  //   founders (currently in <hapNumsBySex>).
+  // - Element [2] contains either all individuals (if !<respectSexes>) or
+  //   has the same number of entries as those in the VCF without a sex.
+  // - NOTE: use of --set_founders changes the above slightly: we only include
+  //   founders in <hapNumsBySex> that aren't assigned and the number of
+  //   entries is reduced by the number of VCF ids assigned.
+  vector<int> hapNumsToShuf[3];
+
+  uint32_t numDupVcfIds = setFoundersHapsToShuf(simId2Person, vcfId2index,
+                              sexes, vcfIdx2FounderHap, hapNumsToShuf,
+                              hapNumsBySex, totalFounderHaps, vcfSexCounts);
 
   // Now shuffle the haplotypes. We begin by shuffling within the various sex
-  // groups. We then insert these into <shuffHaps> below, respecting the order
-  // of the sexes of the input samples (as now stored in <sampleSexes>).
-  // The corresponding sample in the VCF will be assigned the haplotype number
-  // for simulated samples, so we are logically shuffling the simulated
-  // samples, not the input samples. (The latter must be read in in a fixed
-  // order -- the same order stored in <shuffHaps>).
+  // groups. We then insert these into <vcfIdx2FounderHap> below, respecting the
+  // order of the sexes of the input VCF samples (as now stored in
+  // <vcfSampleSexes>).
+  // The corresponding sample in the VCF will be assigned the simulated founder
+  // haplotype number, so we are logically shuffling the simulated founders, not
+  // the input samples. (The input samples must be read in in a fixed order --
+  // and we keep that order for the indexes of <vcfIdx2FounderHap>.)
   // Ultimately only the haplotype indexes that are < totalFounderHaps are for
-  // simulated samples; those >= totalFounderHaps will be printed if
-  // --retain_extra is in place
+  // simulated samples. (We may print some others if --retain_extra is in
+  // place.)
   for(int sexIdx = 0; sexIdx < 3; sexIdx++)
-    shuffle(sexSpecHapIdxs[sexIdx].begin(), sexSpecHapIdxs[sexIdx].end(),
+    shuffle(hapNumsToShuf[sexIdx].begin(), hapNumsToShuf[sexIdx].end(),
 	    randomGen);
 
   int curSSHapIdx[3] = { 0, 0, 0 };
-  for(uint32_t i = 0; i < sampleSexes.size(); i++) {
-    uint8_t curSex = sampleSexes[i];
-    shuffHaps.push_back( sexSpecHapIdxs[ curSex ][ curSSHapIdx[ curSex ] ] );
+  for(uint32_t i = 0; i < vcfSampleSexes.size(); i++) {
+    if (vcfIdx2FounderHap[i].size() > 0)
+      // already assigned founder(s) to this VCF id using --set_founders
+      continue;
+    uint8_t curSex = vcfSampleSexes[i];
+    // map VCF sample index <i> to the given founder haplotype
+    vcfIdx2FounderHap[i].push_back(hapNumsToShuf[curSex][curSSHapIdx[curSex]]);
     curSSHapIdx[curSex]++;
   }
 
-  assert(shuffHaps.size() == sampleIds.size());
-}
+  assert(vcfIdx2FounderHap.size() == vcfIds.size());
 
+  return numDupVcfIds;
+}
 
 // print fam format file with the pedigree structure of all individuals included
 // in the simulation
