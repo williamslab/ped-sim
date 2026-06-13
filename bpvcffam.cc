@@ -168,7 +168,8 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
     for(int rep = 0; rep < numReps; rep++) {
       for(int gen = 0; gen < numGen; gen++) {
 	for(int branch = 0; branch < numBranches[gen]; branch++) {
-	  if (numSampsToPrint[gen][branch] > 0) {
+	  bool printAllGens = CmdLineOpts::printBPAll;
+	  if (numSampsToPrint[gen][branch] > 0 || printAllGens) {
 	    int numNonFounders, numFounders;
 	    getPersonCounts(gen, numGen, branch, numSampsToPrint,
 			    branchParents, branchNumSpouses, numFounders,
@@ -178,7 +179,8 @@ void printBPs(vector<SimDetails> &simDetails, Person *****theSamples,
 	    for(int ind = 0; ind < numPersons; ind++) {
 	      for(int h = 0; h < 2; h++) {
 		int sex = theSamples[ped][rep][gen][branch][ind].sex;
-		printSampleId(out, simDetails[ped], rep, gen, branch, ind);
+		printSampleId(out, simDetails[ped], rep, gen, branch, ind,
+			      printAllGens);
 		fprintf(out, " s%d h%d", sex, h);
 
 		for(unsigned int chr = 0; chr < map.size(); chr++) {

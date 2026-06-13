@@ -22,6 +22,7 @@ unsigned int CmdLineOpts::randSeed;
 int    CmdLineOpts::dryRun = 0;
 int    CmdLineOpts::printFam = 0;
 int    CmdLineOpts::printBP = 0;
+int    CmdLineOpts::printBPAll = 0;
 int    CmdLineOpts::printMRCA = 0;
 int    CmdLineOpts::nogz = 0;
 double CmdLineOpts::genoErrRate = 1e-3;
@@ -65,6 +66,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"dry_run", no_argument, &CmdLineOpts::dryRun, 1},
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
+    {"bp_all", no_argument, &CmdLineOpts::printBPAll, 1},
     {"mrca", no_argument, &CmdLineOpts::printMRCA, 1},
     {"nogz", no_argument, &CmdLineOpts::nogz, 1},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
@@ -299,6 +301,10 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     printFam = 1;
   }
 
+  if (printBPAll) {
+    printBP = 1;
+  }
+
   if (!haveGoodArgs) {
     printUsage(stderr, argv[0]);
   }
@@ -340,6 +346,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\t\t\t   founder genotypes are assigned irrespective of sex)\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
+  fprintf(out, "  --bp_all\t\tprint BP file with all simulated individuals\n");
   fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
   fprintf(out, "  --nogz\t\talways print uncompressed VCF files\n");
   fprintf(out, "\n");
