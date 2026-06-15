@@ -21,7 +21,7 @@ Version 1.3 now supports branch-specific sex assignments in the
 
 Version 1.2 now supports simulating the X chromosome. See the [map
 file](#map-file) section for code to generate a map file that includes X
-chromosome positions from the [Bhérer et al.
+chromosome positions from the [Bhï¿½rer et al.
 (2017)](http://dx.doi.org/10.1038/ncomms14994) map. To simulate genetic data
 (i.e., output a VCF file) that includes the X chromosome, [specify sexes of
 the input VCF using `--sexes`](#specifying-sexes-of-samples-in-the-input-vcf).
@@ -573,7 +573,7 @@ female parents.
 correspond to the female genetic position if given.
 
 A high resolution human sex-specific genetic map is available [here](https://github.com/cbherer/Bherer_etal_SexualDimorphismRecombination),
-and is described in [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
+and is described in [Bhï¿½rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994).
 To generate an autosomal map file in the format the simulator requires with
 both male and female genetic positions, run the following bash commands:
 
@@ -591,7 +591,7 @@ done
 This generates a file called `refined_mf.simmap` that can be passed to the
 simulator.
 
-To include the X chromosome from the Bhérer et al. map, run the above plus
+To include the X chromosome from the Bhï¿½rer et al. map, run the above plus
 the following commands (to retain both maps, change the first command to `cp`
 instead of `mv`):
 
@@ -697,6 +697,17 @@ indicates the pair shares two segments IBD in the region. `HBD` stands for
 homozygous by descent, also called a run of homozygosity (ROH), which is a
 region where an individual is IBD with themselves. The latter only occurs in
 the presence of inbreeding.
+
+With `--seg_haps`, Ped-sim instead prints includes the haplotype ids in the `.seg` file
+with the following format: 
+
+    [sample 1] [sample 1 haplotype] [sample 2] [sample 2 haplotype] [chromosome] [physical position start] [physical position end] [IBD type] [genetic position start] [genetic position end] [genetic length (end - start)]
+
+In this mode, segments between distinct samples are always printed as
+`IBD1` rows and `HBD` remains `HBD`. The haplotype columns are `0` or `1`,
+matching the two simulated haplotypes tracked for each person. The `.mrca`
+file, if requested with `--mrca`, remains unchanged in format and stays
+line-aligned with the `.seg` file.
 
 ------------------------------------------------------
 
@@ -864,7 +875,7 @@ Citing Ped-sim and related papers
 
 If you use Ped-sim in your work, please cite [Caballero et al. (2019)](https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007979);
 if you use the Refined genetic map (named `refined_mf.simmap` in the example
-code), please cite [Bhérer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
+code), please cite [Bhï¿½rer et al. (2017)](http://dx.doi.org/10.1038/ncomms14994);
 and if you use the `interfere/nu_p_campbell.tsv` interference parameters, please
 cite [Campbell et al. (2015)](https://www.nature.com/articles/ncomms7260).
 

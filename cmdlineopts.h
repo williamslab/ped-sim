@@ -59,6 +59,9 @@ class CmdLineOpts {
     // Include all simulated people in the bp file?
     static int printBPAll;
 
+    // Print haplotype-resolved segment output?
+    static int printSegHaps;
+
     // Print the MRCA of segments?
     static int printMRCA;
 

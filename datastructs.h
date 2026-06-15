@@ -3,6 +3,7 @@
 // This program is distributed under the terms of the GNU General Public License
 
 #include <vector>
+#include <tuple>
 #include <string.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,12 +145,14 @@ struct Person {
 // is the founder of) a given haplotype
 struct InheritRecord {
   InheritRecord() { assert(false); }
-  InheritRecord(unsigned int p, int r, int g, int b, int i, int s, int e) {
+  InheritRecord(unsigned int p, int r, int g, int b, int i, int h,
+		int s, int e) {
     ped = p;
     rep = r;
     gen = g;
     branch = b;
     ind = i;
+    hapIdx = h;
     startPos = s;
     endPos = e;
     assert(startPos <= endPos);
@@ -159,18 +162,22 @@ struct InheritRecord {
   int gen;
   int branch;
   int ind;
+  int hapIdx;
   int startPos;
   int endPos;
 
-  vector< pair<int, int> > hbd;
+  vector< tuple<int, int, int, int> > hbd;
 };
 
 struct IBDRecord {
   IBDRecord() { assert(false); }
-  IBDRecord(int og, int ob, int oi, int ci, int start, int end, int foundHap) {
+  IBDRecord(int og, int ob, int oi, int h, int oh, int ci, int start,
+	    int end, int foundHap) {
     otherGen = og;
     otherBranch = ob;
     otherInd = oi;
+    hapIdx = h;
+    otherHapIdx = oh;
     chrIdx = ci;
     startPos = start;
     endPos = end;
@@ -181,6 +188,8 @@ struct IBDRecord {
   int otherGen;
   int otherBranch;
   int otherInd;
+  int hapIdx;
+  int otherHapIdx;
   int chrIdx;
   int startPos;
   int endPos;

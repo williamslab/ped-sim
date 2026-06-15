@@ -23,6 +23,7 @@ int    CmdLineOpts::dryRun = 0;
 int    CmdLineOpts::printFam = 0;
 int    CmdLineOpts::printBP = 0;
 int    CmdLineOpts::printBPAll = 0;
+int    CmdLineOpts::printSegHaps = 0;
 int    CmdLineOpts::printMRCA = 0;
 int    CmdLineOpts::nogz = 0;
 double CmdLineOpts::genoErrRate = 1e-3;
@@ -67,6 +68,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
     {"bp_all", no_argument, &CmdLineOpts::printBPAll, 1},
+    {"seg_haps", no_argument, &CmdLineOpts::printSegHaps, 1},
     {"mrca", no_argument, &CmdLineOpts::printMRCA, 1},
     {"nogz", no_argument, &CmdLineOpts::nogz, 1},
     {"keep_phase", no_argument, &CmdLineOpts::keepPhase, 1},
@@ -343,7 +345,8 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
   fprintf(out, "  --bp_all\t\tinclude all simulated people in the BP file\n");
-  fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
+  fprintf(out, "  --seg_haps\t\tprint haplotype-resolved segments in the .seg file\n");
+  fprintf(out, "  --mrca\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
   fprintf(out, "  --nogz\t\talways print uncompressed VCF files\n");
   fprintf(out, "\n");
   fprintf(out, "  --dry_run\t\toutput only a fam file with one replicate per pedigree:\n");

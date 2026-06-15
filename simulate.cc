@@ -246,7 +246,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  // print this branch?
 		  if (numSampsToPrint[curGen][branch] > 0) {
 		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
-			ped, rep, curGen, branch, ind, chrStart, chrEnd);
+			ped, rep, curGen, branch, ind, h, chrStart, chrEnd);
 		  }
 
 		}
@@ -508,7 +508,7 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 
     if (ped >= 0) {
       hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	  ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
+	  ped, rep, curGen, branch, ind, curHap, nextSegStart, seg.endPos);
     }
     nextSegStart = seg.endPos + 1;
   }
@@ -541,7 +541,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, rep, curGen, branch, ind, nextSegStart, switchPos);
+	    ped, rep, curGen, branch, ind, curHap, nextSegStart, switchPos);
       }
       nextSegStart = switchPos + 1;
       break; // done copying
@@ -551,7 +551,7 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
+	    ped, rep, curGen, branch, ind, curHap, nextSegStart, seg.endPos);
       }
       nextSegStart = seg.endPos + 1;
     }

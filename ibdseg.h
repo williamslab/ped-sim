@@ -15,6 +15,7 @@ using namespace std;
 bool compInheritRecSamp(const InheritRecord &a, const InheritRecord &b);
 bool compInheritRecStart(const InheritRecord &a, const InheritRecord &b);
 bool compIBDRecord(const IBDRecord &a, const IBDRecord &b);
+bool compIBDRecordHaps(const IBDRecord &a, const IBDRecord &b);
 void locatePrintIBD(vector<SimDetails> &simDetails,
 		    vector< vector< vector<InheritRecord> > > &hapCarriers,
 		    GeneticMap &map, bool sexSpecificMaps, char *ibdFile,
@@ -25,12 +26,19 @@ void printIBD(FILE *out, SimDetails &pedDetails, int rep,
 	      GeneticMap &map, bool sexSpecificMaps,
 	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
 	      FILE *mrcaOut);
+void printHapIBD(FILE *out, SimDetails &pedDetails, int rep,
+		 vector< vector< vector<IBDRecord> > > *theSegs,
+		 GeneticMap &map, bool sexSpecificMaps,
+		 vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+		 FILE *mrcaOut);
 void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap);
+void mergeHapSegments(vector<IBDRecord> &segs, bool retainFoundHap);
 void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int rep,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
-			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs);
+			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+			bool printHaps = false);
 void printSegFounderId(FILE *mrcaOut, int foundHapNum, SimDetails &pedDetails,
 		       int rep);
 void clearTheSegs(SimDetails &pedDetails, 

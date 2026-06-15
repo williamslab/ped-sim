@@ -43,6 +43,15 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b) {
 	 a.startPos < b.startPos);
 }
 
+bool compIBDRecordHaps(const IBDRecord &a, const IBDRecord &b) {
+  return compIBDRecord(a, b) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	  a.otherInd == b.otherInd && a.chrIdx == b.chrIdx &&
+	  a.startPos == b.startPos &&
+	  (a.hapIdx < b.hapIdx ||
+	   (a.hapIdx == b.hapIdx && a.otherHapIdx < b.otherHapIdx)));
+}
+
 // Locates and prints IBD segments using <hapCarriers>
 // if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
 // on HAPI-DNA.org displays
@@ -129,7 +138,9 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	    // store the HBD region:
 	    int hbdStart = max(it1->startPos, it2->startPos);
 	    int hbdEnd = min(it1->endPos, it2->endPos);
-	    it1->hbd.emplace_back(hbdStart, hbdEnd);
+	    int hbdHap1 = min(it1->hapIdx, it2->hapIdx);
+	    int hbdHap2 = max(it1->hapIdx, it2->hapIdx);
+	    it1->hbd.emplace_back(hbdStart, hbdEnd, hbdHap1, hbdHap2);
 
 	    // Now ensure that the retained InheritRecord spans the whole region
 	    it1->endPos = max(it1->endPos, it2->endPos);
@@ -164,9 +175,14 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	// the IBD segments found below and clear out <theSegs>.
 	if ((int) it1->ped != curPed || (int) it1->rep != curRep) {
 	  // print stored segments, locating any IBD2
-	  if (curPed >= 0)
-	    printIBD(out, simDetails[curPed], curRep, theSegs, map,
-		     sexSpecificMaps, ibdSegs, mrcaOut);
+	  if (curPed >= 0) {
+	    if (CmdLineOpts::printSegHaps)
+	      printHapIBD(out, simDetails[curPed], curRep, theSegs, map,
+			  sexSpecificMaps, ibdSegs, mrcaOut);
+	    else
+	      printIBD(out, simDetails[curPed], curRep, theSegs, map,
+		       sexSpecificMaps, ibdSegs, mrcaOut);
+	  }
 	  // update:
 	  curPed = it1->ped;
 	  curRep = it1->rep;
@@ -180,7 +196,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		 hbdIt++) {
 	  theSegs[ it1->gen ][ it1->branch ][ it1->ind ].
 	    emplace_back(it1->gen, it1->branch, it1->ind,
-			 chrIdx, hbdIt->first, hbdIt->second, foundHapNum);
+			 get<2>(*hbdIt), get<3>(*hbdIt), chrIdx,
+			 get<0>(*hbdIt), get<1>(*hbdIt), foundHapNum);
 	}
 
 	// Iterate over InheritRecords after <it1> to search for overlap
@@ -220,7 +237,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
 	  theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
 	    emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			 chrIdx, startPos, endPos, foundHapNum);
+			 samp1->hapIdx, samp2->hapIdx, chrIdx, startPos,
+			 endPos, foundHapNum);
 
 	  // if HBD in both <samp1> and <samp2> spans part of this region,
 	  // then there is IBD2 and we need more IBD segments
@@ -231,20 +249,21 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	    for(auto samp2HBD = samp2->hbd.begin();
 		     samp2HBD != samp2->hbd.end();
 		     samp2HBD++) {
-	      if (samp2HBD->first > samp1HBD->second)
+	      if (get<0>(*samp2HBD) > get<1>(*samp1HBD))
 		// this and later HBD segments in <samp2> don't overlap
 		// <samp1HBD>
 		break;
 
-	      if (samp2HBD->second >= samp1HBD->first &&
-		  samp2HBD->first <= samp1HBD->second) {
+	      if (get<1>(*samp2HBD) >= get<0>(*samp1HBD) &&
+		  get<0>(*samp2HBD) <= get<1>(*samp1HBD)) {
 		// overlapping HBD: add another IBD segment for IBD2
-		int thisStart = max(samp1HBD->first, samp2HBD->first);
-		int thisEnd = min(samp1HBD->second, samp2HBD->second);
+		int thisStart = max(get<0>(*samp1HBD), get<0>(*samp2HBD));
+		int thisEnd = min(get<1>(*samp1HBD), get<1>(*samp2HBD));
 
 		theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
 		  emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			       chrIdx, thisStart, thisEnd, foundHapNum);
+			       samp1->hapIdx, samp2->hapIdx, chrIdx,
+			       thisStart, thisEnd, foundHapNum);
 	      }
 	    } // HBD in samp2 loop
 	  } // HBD in samp1 loop
@@ -253,9 +272,14 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
     } // chrIdx loop
   } // foundHapNum loop
 
-  if (curPed >= 0)
-    printIBD(out, simDetails[curPed], curRep, theSegs, map, sexSpecificMaps,
-	     ibdSegs, mrcaOut);
+  if (curPed >= 0) {
+    if (CmdLineOpts::printSegHaps)
+      printHapIBD(out, simDetails[curPed], curRep, theSegs, map,
+		  sexSpecificMaps, ibdSegs, mrcaOut);
+    else
+      printIBD(out, simDetails[curPed], curRep, theSegs, map,
+	       sexSpecificMaps, ibdSegs, mrcaOut);
+  }
 
   if (out)
     fclose(out);
@@ -439,6 +463,49 @@ void printIBD(FILE *out, SimDetails &pedDetails, int rep,
   }
 }
 
+void printHapIBD(FILE *out, SimDetails &pedDetails, int rep,
+		 vector< vector< vector<IBDRecord> > > *theSegs,
+		 GeneticMap &map, bool sexSpecificMaps,
+		 vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+		 FILE *mrcaOut) {
+  for(int gen = 0; gen < pedDetails.numGen; gen++) {
+    for(int branch = 0; branch < pedDetails.numBranches[gen]; branch++) {
+      if (pedDetails.numSampsToPrint[gen][branch] <= 0)
+	continue;
+
+      int numNonFounders, numFounders;
+      getPersonCounts(gen, pedDetails.numGen, branch,
+		      pedDetails.numSampsToPrint, pedDetails.branchParents,
+		      pedDetails.branchNumSpouses, numFounders, numNonFounders);
+      int numPersons = numNonFounders + numFounders;
+      for(int ind = 0; ind < numPersons; ind++) {
+	vector<IBDRecord> &segs = theSegs[gen][branch][ind];
+	if (segs.size() == 0)
+	  continue;
+
+	sort(segs.begin(), segs.end(), compIBDRecordHaps);
+	mergeHapSegments(segs, /*retainFoundHap=*/ mrcaOut != NULL);
+
+	for(auto it = segs.begin(); it != segs.end(); it++) {
+	  if (pedDetails.numSampsToPrint[ it->otherGen ][ it->otherBranch ] <= 0)
+	    continue;
+
+	  uint8_t ibdType = 1;
+	  if (gen == it->otherGen && branch == it->otherBranch &&
+	      ind == it->otherInd)
+	    ibdType = 0;
+
+	  printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, *it,
+			     it->startPos, it->endPos, ibdType, map,
+			     sexSpecificMaps, ibdSegs, /*printHaps=*/ true);
+	  if (mrcaOut)
+	    printSegFounderId(mrcaOut, it->foundHapNum, pedDetails, rep);
+	}
+      }
+    }
+  }
+}
+
 // Helper for printIBD(): merges adjacent IBD segments
 // If <retainFoundHap> is true, segments are only merged if they have the same
 // foundHapNum
@@ -510,6 +577,51 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
   }
 }
 
+void mergeHapSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
+  int numSegs = segs.size();
+  int numRemoved = 0;
+  for(int i = 0; i < numSegs - numRemoved; i++) {
+    if (numRemoved)
+      segs[i] = segs[i + numRemoved];
+
+    while (segs[i].otherGen == -1) {
+      numRemoved++;
+      if (i + numRemoved < numSegs)
+	segs[i] = segs[i + numRemoved];
+      else
+	break;
+    }
+
+    for(int j = numRemoved + 1; (i + j) < numSegs; j++) {
+      if (segs[i + j].otherGen == -1)
+	continue;
+
+      if (segs[i].otherGen != segs[i + j].otherGen ||
+	  segs[i].otherBranch != segs[i + j].otherBranch ||
+	  segs[i].otherInd != segs[i + j].otherInd ||
+	  segs[i].chrIdx != segs[i + j].chrIdx ||
+	  segs[i].hapIdx != segs[i + j].hapIdx ||
+	  segs[i].otherHapIdx != segs[i + j].otherHapIdx)
+	break;
+      if (segs[i].endPos + 1 < segs[i + j].startPos)
+	break;
+      if (!retainFoundHap || segs[i].foundHapNum == segs[i + j].foundHapNum) {
+	segs[i].endPos = max(segs[i].endPos, segs[i + j].endPos);
+	segs[i + j].otherGen = -1;
+      }
+    }
+  }
+
+  numSegs -= numRemoved;
+  segs.resize(numSegs);
+  for(int i = 0; i < numSegs; i++) {
+    assert(segs[i].otherGen != -1);
+    if (i < numSegs - 1)
+      assert(compIBDRecordHaps(segs[i], segs[i+1]) ||
+	     !compIBDRecordHaps(segs[i+1], segs[i]));
+  }
+}
+
 // Prints the IBD segment described by the parameters to <out>
 // if <ibdSegs> is non-NULL, stores the information that the WASM ped-sim code
 // on HAPI-DNA.org displays
@@ -517,15 +629,22 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int rep,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
-			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs){
+			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+			bool printHaps){
   const char *ibdTypeStr[3] = { "HBD", "IBD1", "IBD2" };
 
   if (out) { // want to print the segment (if not, <ibdSegs> will be non-NULL)
     printSampleId(out, pedDetails, rep, gen, branch, ind);
-    fprintf(out, "\t");
+    if (printHaps)
+      fprintf(out, "\t%d\t", seg.hapIdx);
+    else
+      fprintf(out, "\t");
     printSampleId(out, pedDetails, rep, seg.otherGen, seg.otherBranch,
 		  seg.otherInd);
-    fprintf(out, "\t");
+    if (printHaps)
+      fprintf(out, "\t%d\t", seg.otherHapIdx);
+    else
+      fprintf(out, "\t");
 
     fprintf(out, "%s\t%d\t%d\t%s", map.chromName(seg.chrIdx), realStart,
 	    realEnd, ibdTypeStr[ ibdType ]);
