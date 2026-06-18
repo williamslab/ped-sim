@@ -793,18 +793,18 @@ complete information about each sample's haplotypes. All founders have a unique
 numerical id for each of their two haplotypes, starting from 0 and ranging to
 2\**F*-1, where *F* is the total number of founders in all simulated pedigrees.
 Within the BP file, there are two lines for every sample requested to be printed
-(according to the def file). If `--bp_all` is also used, the BP file instead
-includes every simulated person in the pedigree, including unprinted
-individuals. Each line begins with the sample id (described above) of the
-simulated individual, the sex of that person, either `s0` for male or `s1` for
-female, the haplotype that line describes, `h0` or `h1`, and then a variable
-number of segments for each chromosome.
+(according to the def file). If `--bp_all` is used, Ped-sim also enables BP
+output and includes every simulated person in the pedigree, including
+unprinted individuals. Each line begins with the sample id (described above) of
+the simulated individual, the sex of that person, either `s0` for male or `s1`
+for female, the haplotype that line describes, `h0` or `h1`, and then a
+variable number of segments for each chromosome.
 
 To print BP output for every simulated person in the pedigree rather than only the
 printed individuals, use for example:
 
     ./ped-sim -d example/second_deg.def -m refined_mf.simmap \
-      -o output --pois --bp --bp_all
+      -o output --pois --bp_all
 
 For each simulated chromosome, there is starting physical position and one or
 more break points. The start description is listed as

@@ -21,7 +21,6 @@ all_prefix="$tmpdir/all"
   -m "$repo_root/refined_mf.simmap" \
   -o "$all_prefix" \
   --pois \
-  --bp \
   --bp_all
 
 default_bp="$default_prefix.bp"
@@ -36,7 +35,7 @@ if [[ "$default_lines" -ne 4 ]]; then
 fi
 
 if [[ "$all_lines" -ne 8 ]]; then
-  echo "expected --bp_all BP output to have 8 lines, got $all_lines" >&2
+  echo "expected --bp_all alone to produce 8 BP lines, got $all_lines" >&2
   exit 1
 fi
 
