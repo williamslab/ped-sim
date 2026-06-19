@@ -346,7 +346,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\t\t\t   founder genotypes are assigned irrespective of sex)\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
-  fprintf(out, "  --bp_all\t\tprint BP file with all simulated people\n");
+  fprintf(out, "  --bp_all\t\tprint BP file with all simulated individuals\n");
   fprintf(out, "  --mcra\t\tprint MRCA file (founder each IBD segment coalesces in)\n");
   fprintf(out, "  --nogz\t\talways print uncompressed VCF files\n");
   fprintf(out, "\n");
