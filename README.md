@@ -7,6 +7,10 @@ sexes) when using such maps.
 Recent updates
 --------------
 
+Version 1.4.7 supports haplotype-resolved IBD segments with the [`--seg_haps` option](#output-ibd-segments-file)
+
+Version 1.4.6 enables printing BP output for _all_ simulated individuals with the [`--bp_all` option](#output-bp-file)
+
 Version 1.4.5 introduces the [`--set_founders`](#assigning-vcf-ids-to-specific-founders---set_founders) option.
 
 Version 1.4.2 introduces the [`--dry_run`](#dry-run-for-visualizing-pedigrees)
@@ -18,15 +22,6 @@ effectively introduces switch errors into the transmitted haplotypes.
 
 Version 1.3 now supports branch-specific sex assignments in the
 [def file](#def-file).
-
-Version 1.2 now supports simulating the X chromosome. See the [map
-file](#map-file) section for code to generate a map file that includes X
-chromosome positions from the [Bhérer et al.
-(2017)](http://dx.doi.org/10.1038/ncomms14994) map. To simulate genetic data
-(i.e., output a VCF file) that includes the X chromosome, [specify sexes of
-the input VCF using `--sexes`](#specifying-sexes-of-samples-in-the-input-vcf).
-To change the name Ped-sim considers as the X chromosome [use the `-X`
-option](#x-chromosome-name--x-string).
 
 Table of Contents
 -----------------
@@ -698,6 +693,17 @@ homozygous by descent, also called a run of homozygosity (ROH), which is a
 region where an individual is IBD with themselves. The latter only occurs in
 the presence of inbreeding.
 
+With `--seg_haps`, Ped-sim includes the haplotype ids in the `.seg` file with
+the following format: 
+
+    [sample 1] [sample 1 haplotype] [sample 2] [sample 2 haplotype] [chromosome] [physical position start] [physical position end] [IBD type] [genetic position start] [genetic position end] [genetic length (end - start)]
+
+In this mode, every segment relates to a single pair of haplotypes and so the
+IBD type is either `IBD1` or `HBD`. The haplotype columns are `0` or `1`,
+matching the two simulated haplotypes tracked for each person. The `.mrca`
+file, if requested with `--mrca`, remains unchanged in format and stays
+line-aligned with the `.seg` file.
+
 ------------------------------------------------------
 
 Output VCF file
@@ -800,8 +806,8 @@ the simulated individual, the sex of that person, either `s0` for male or `s1`
 for female, the haplotype that line describes, `h0` or `h1`, and then a
 variable number of segments for each chromosome.
 
-To print BP output for every simulated individual in the pedigree rather than only the
-printed individuals, use for example:
+To print BP output for every simulated individual in the pedigree rather than
+only the printed individuals, use for example:
 
     ./ped-sim -d example/second_deg.def -m refined_mf.simmap \
       -o output --pois --bp_all

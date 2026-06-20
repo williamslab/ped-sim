@@ -7,8 +7,8 @@
 #ifndef CMDLINEOPTS_H
 #define CMDLINEOPTS_H
 
-#define VERSION_NUMBER	"1.4.5"
-#define RELEASE_DATE	"13 Dec 2024"
+#define VERSION_NUMBER	"1.4.7"
+#define RELEASE_DATE	"25 Jun 2026"
 
 class CmdLineOpts {
   public:
@@ -49,6 +49,9 @@ class CmdLineOpts {
     // Dry run? Only prints a fam file with one replicate per pedigee and
     // outputs the number of founders needed to simulate genetic data
     static int dryRun;
+
+    // Print haplotype-resolved segment output?
+    static int printSegHaps;
 
     // Print the fam file?
     static int printFam;

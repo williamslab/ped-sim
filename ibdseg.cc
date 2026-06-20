@@ -40,7 +40,14 @@ bool compIBDRecord(const IBDRecord &a, const IBDRecord &b) {
 	 a.otherInd == b.otherInd && a.chrIdx < b.chrIdx) ||
 	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
 	 a.otherInd == b.otherInd && a.chrIdx == b.chrIdx &&
-	 a.startPos < b.startPos);
+	 a.startPos < b.startPos) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	 a.otherInd == b.otherInd && a.chrIdx == b.chrIdx &&
+	 a.startPos == b.startPos && a.hapIdx < b.hapIdx) ||
+	 (a.otherGen == b.otherGen && a.otherBranch == b.otherBranch &&
+	 a.otherInd == b.otherInd && a.chrIdx == b.chrIdx &&
+	 a.startPos == b.startPos && a.hapIdx == b.hapIdx &&
+	 a.otherHapIdx < b.otherHapIdx);
 }
 
 // Locates and prints IBD segments using <hapCarriers>
@@ -91,7 +98,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
   int totalFounderHaps = hapCarriers.size();
   unsigned int numChrs = map.size();
 
-  // Have a record of all individuals that inherited each founder haplotype
+  // We have a record of all individuals that inherited each founder haplotype
   // Go through this one founder haplotype and one chromosome at a time to
   // find the overlapping IBD and also HBD segments
   for (int foundHapNum = 0; foundHapNum < totalFounderHaps; foundHapNum++) {
@@ -163,10 +170,11 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	// If we're about to start analyzing a new pedigree or replicate, print
 	// the IBD segments found below and clear out <theSegs>.
 	if ((int) it1->ped != curPed || (int) it1->rep != curRep) {
-	  // print stored segments, locating any IBD2
+	  // print stored segments, locating any IBD2 (for unphased IBD)
 	  if (curPed >= 0)
 	    printIBD(out, simDetails[curPed], curRep, theSegs, map,
-		     sexSpecificMaps, ibdSegs, mrcaOut);
+		     sexSpecificMaps, ibdSegs, CmdLineOpts::printSegHaps,
+		     mrcaOut);
 	  // update:
 	  curPed = it1->ped;
 	  curRep = it1->rep;
@@ -178,9 +186,12 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 	for(auto hbdIt = it1->hbd.begin();
 		 hbdIt != it1->hbd.end();
 		 hbdIt++) {
+	  // since this is an ROH, the haplotype indices are necessarily 0 and 1
+	  // (order arbitrary)
 	  theSegs[ it1->gen ][ it1->branch ][ it1->ind ].
-	    emplace_back(it1->gen, it1->branch, it1->ind,
-			 chrIdx, hbdIt->first, hbdIt->second, foundHapNum);
+	    emplace_back(/*hapIdx=*/ 0, it1->gen, it1->branch, it1->ind,
+			 /*otherHapIdx=*/ 1, chrIdx, hbdIt->first,
+			 hbdIt->second, foundHapNum);
 	}
 
 	// Iterate over InheritRecords after <it1> to search for overlap
@@ -219,8 +230,8 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		 it1->ind != it2->ind);
 
 	  theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
-	    emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			 chrIdx, startPos, endPos, foundHapNum);
+	    emplace_back(samp1->hapIdx, samp2->gen, samp2->branch, samp2->ind,
+			 samp2->hapIdx, chrIdx, startPos, endPos, foundHapNum);
 
 	  // if HBD in both <samp1> and <samp2> spans part of this region,
 	  // then there is IBD2 and we need more IBD segments
@@ -243,8 +254,9 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 		int thisEnd = min(samp1HBD->second, samp2HBD->second);
 
 		theSegs[ samp1->gen ][ samp1->branch ][ samp1->ind ].
-		  emplace_back(samp2->gen, samp2->branch, samp2->ind,
-			       chrIdx, thisStart, thisEnd, foundHapNum);
+		  emplace_back(samp1->hapIdx, samp2->gen, samp2->branch,
+			       samp2->ind, samp2->hapIdx, chrIdx, thisStart,
+			       thisEnd, foundHapNum);
 	      }
 	    } // HBD in samp2 loop
 	  } // HBD in samp1 loop
@@ -255,7 +267,7 @@ void locatePrintIBD(vector<SimDetails> &simDetails,
 
   if (curPed >= 0)
     printIBD(out, simDetails[curPed], curRep, theSegs, map, sexSpecificMaps,
-	     ibdSegs, mrcaOut);
+	     ibdSegs, CmdLineOpts::printSegHaps, mrcaOut);
 
   if (out)
     fclose(out);
@@ -270,7 +282,7 @@ void printIBD(FILE *out, SimDetails &pedDetails, int rep,
 	      vector< vector< vector<IBDRecord> > > *theSegs,
 	      GeneticMap &map, bool sexSpecificMaps,
 	      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
-	      FILE *mrcaOut) {
+	      bool printHaps, FILE *mrcaOut) {
   // Go through <theSegs> and print segments for samples that were listed as
   // printed in the def file
   for(int gen = 0; gen < pedDetails.numGen; gen++) {
@@ -294,155 +306,174 @@ void printIBD(FILE *out, SimDetails &pedDetails, int rep,
 	sort(segs.begin(), segs.end(), compIBDRecord);
 
 	// merge segments that are adjacent to each other
-	mergeSegments(segs, /*retainFoundHap=*/ mrcaOut != NULL);
-	int numSegs = segs.size();
+	mergeSegments(segs, printHaps, /*retainFoundHap=*/ mrcaOut != NULL);
+	if (printHaps) { // print segs with haplotype numbers?
+	  // simple to print IBD when we don't need to find IBD2
+	  for(auto it = segs.begin(); it != segs.end(); it++) {
+	    if (pedDetails.numSampsToPrint[it->otherGen][it->otherBranch] <= 0)
+	      continue;
 
-	// Now print segments, identifying any IBD2 and printing it as such
-	for(int i = 0; i < numSegs; i++) {
+	    uint8_t ibdType = 1; // IBD1
+	    if (gen == it->otherGen && branch == it->otherBranch &&
+		ind == it->otherInd)
+	      ibdType = 0; // HBD
 
-	  int nextI = 1; // shift for next segment
-	  bool done = false;
-	  while (!done) {
-	    // by default should only execute the below code once
-	    // certain conditions below set this to false
-	    done = true;
-
-	    // is the <i + nextI>th segment part of an IBD2 segment with the
-	    // current one?
-	    if (i + nextI < numSegs && // valid next segment?
-		segs[i].otherGen == segs[i + nextI].otherGen &&
-		segs[i].otherBranch == segs[i + nextI].otherBranch &&
-		segs[i].otherInd == segs[i + nextI].otherInd &&
-		segs[i].chrIdx == segs[i + nextI].chrIdx &&
-		segs[i].endPos >= segs[i + nextI].startPos) {
-	      // IBD2 region
-
-	      if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
-					    [ segs[i].otherBranch ] <= 0)
-		continue; // don't to print IBD segment (branch not printed)
-
-	      // ensure this doesn't look like a HBD segment: shouldn't happen
-	      assert(gen != segs[i].otherGen || branch != segs[i].otherBranch ||
-		     ind != segs[i].otherInd);
-
-	      // <seg[i]> should start before <seg[i + nextI]>: they're sorted
-	      assert(segs[i].startPos <= segs[i + nextI].startPos);
-
-	      // any preceding IBD1 segment?
-	      if (segs[i].startPos < segs[i + nextI].startPos) {
-		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
-				   segs[i], /*realStart=*/ segs[i].startPos,
-				   /*realEnd=*/ segs[i + nextI].startPos - 1,
-				   /*type=IBD1=*/ 1, map, sexSpecificMaps,
-				   ibdSegs);
-		if (mrcaOut)
-		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    rep);
-	      }
-
-	      // now the IBD2 segment:
-	      int ibd2End = min(segs[i].endPos, segs[i + nextI].endPos);
-	      printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
-				 segs[i],
-				 /*realStart=*/ segs[i + nextI].startPos,
-				 /*realEnd=*/ ibd2End,
-				 /*type=IBD2=*/ 2, map, sexSpecificMaps,
-				 ibdSegs);
-	      if (mrcaOut)
-		printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				  rep);
-
-	      // likely another segment just after the IBD2 end, but that region
-	      // must be checked against later <segs>. To ensure this is done
-	      // properly, we update the startPos of the continuing segment:
-	      if (segs[i].endPos == segs[i + nextI].endPos) {
-		// corner case: both finished, increment i so that
-		// <seg[i+1]> through <seg[i + nextI]> gets skipped
-		// (they're already printed)
-		// NOTE: EFFECT WITH CODE JUST AFTER WHILE LOOP IS i += nextI
-		i++;
-		//done = true; // no need to loop (commented b/c done is true)
-	      }
-	      else if (segs[i].endPos > ibd2End) {
-		// <segs[i]> continues; should increment nextI and loop:
-		nextI++;
-		// also update start position of <segs[i]> to exclude the
-		// printed portion
-		segs[i].startPos = ibd2End + 1;
-		done = false; // loop
-	      }
-	      else {
-		// <segs[i + nextI]> continues. This is the intuitive case: <i>
-		// will increment so <segs[i + (nextI - 1) + 1]> will be
-		// considered next (see code after the while loop)
-		// Only require that the start of that segment doesn't include
-		// the already-printed regions
-		segs[i + nextI].startPos = ibd2End + 1;
-		assert(segs[i + nextI].startPos <= segs[i + nextI].endPos);
-
-		// Annoying thing is that now segs[i + nextI], with its new
-		// start position, may be out of order.
-		// This loop moves it to the right position:
-		int initI = i + nextI;
-		for(int j = 0; initI + j + 1 < numSegs &&
-			       !compIBDRecord(segs[initI + j],
-					       segs[initI + j + 1]) &&
-			       compIBDRecord(segs[initI + j + 1],
-					     segs[initI + j]); j++) {
-		  // do the swap:
-		  IBDRecord tmp = segs[initI + j];
-		  segs[initI + j] = segs[initI + j + 1];
-		  segs[initI + j + 1] = tmp;
-		}
-		//done = true; // no need to loop (commented b/c done is true)
-	      }
-	    }
-	    else {
-	      // IBD1 or HBD region:
-
-	      if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
-					    [ segs[i].otherBranch ] <= 0)
-		continue; // don't to print IBD segment (branch not printed)
-
-	      if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
-		  ind == segs[i].otherInd) {
-		// HBD
-		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
-				   segs[i],
-				   /*realStart=standard=*/ segs[i].startPos,
-				   /*realEnd=standard=*/ segs[i].endPos,
-				   /*type=HBD=*/ 0, map, sexSpecificMaps,
-				   ibdSegs);
-		if (mrcaOut)
-		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    rep);
-	      }
-	      else {
-		// IBD1
-		printOneIBDSegment(out, pedDetails, rep, gen, branch, ind,
-				   segs[i],
-				   /*realStart=standard=*/ segs[i].startPos,
-				   /*realEnd=standard=*/ segs[i].endPos,
-				   /*type=IBD1=*/ 1, map, sexSpecificMaps,
-				   ibdSegs);
-		if (mrcaOut)
-		  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
-				    rep);
-	      }
-	    }
-	  } // looping over <nextI> values
-
-	  i += nextI - 1; // skip the already-processed IBD records
+	    printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, *it,
+			       it->startPos, it->endPos, ibdType, map,
+			       sexSpecificMaps, ibdSegs, /*printHaps=*/ true);
+	    if (mrcaOut)
+	      printSegFounderId(mrcaOut, it->foundHapNum, pedDetails, rep);
+	  }
 	}
+	else
+	  printUnphasedIBD(out, pedDetails, rep, segs, gen, branch, ind, map,
+			   sexSpecificMaps, ibdSegs, mrcaOut);
       }
     }
+  }
+}
+
+// Printing unphased IBD requires finding IBD2 regions and therefore merging
+// and chopping up IBDRecords (they correspond to IBD found on one pair of
+// haplotypes); this function finds IBD2 regions and prints all segments
+void printUnphasedIBD(FILE *out, SimDetails &pedDetails, int rep,
+		      vector<IBDRecord> &segs, int gen, int branch, int ind,
+		      GeneticMap &map, bool sexSpecificMaps,
+		      vector< tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+		      FILE *mrcaOut) {
+  int numSegs = segs.size();
+
+  // Print segments, identifying any IBD2 and printing it as such
+  for(int i = 0; i < numSegs; i++) {
+
+    int nextI = 1; // shift for next segment
+    bool done = false;
+    while (!done) {
+      // by default should only execute the below code once certain conditions
+      // below set this to false
+      done = true;
+
+      // is the <i + nextI>th segment part of an IBD2 segment with the current
+      // one?
+      if (i + nextI < numSegs && // valid next segment?
+	  segs[i].otherGen == segs[i + nextI].otherGen &&
+	  segs[i].otherBranch == segs[i + nextI].otherBranch &&
+	  segs[i].otherInd == segs[i + nextI].otherInd &&
+	  segs[i].chrIdx == segs[i + nextI].chrIdx &&
+	  segs[i].endPos >= segs[i + nextI].startPos) {
+	// IBD2 region
+
+	if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
+				      [ segs[i].otherBranch ] <= 0)
+	  continue; // don't print IBD segment (branch not printed)
+
+	// ensure this doesn't look like an HBD segment: shouldn't happen
+	assert(gen != segs[i].otherGen || branch != segs[i].otherBranch ||
+	       ind != segs[i].otherInd);
+
+	// <seg[i]> should start before <seg[i + nextI]>: they're sorted
+	assert(segs[i].startPos <= segs[i + nextI].startPos);
+
+	// any preceding IBD1 segment?
+	if (segs[i].startPos < segs[i + nextI].startPos) {
+	  printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, segs[i],
+			     /*realStart=*/ segs[i].startPos,
+			     /*realEnd=*/ segs[i + nextI].startPos - 1,
+			     /*type=IBD1=*/ 1, map, sexSpecificMaps, ibdSegs);
+	  if (mrcaOut)
+	    printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails,
+			      rep);
+	}
+
+	// now the IBD2 segment:
+	int ibd2End = min(segs[i].endPos, segs[i + nextI].endPos);
+	printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, segs[i],
+			   /*realStart=*/ segs[i + nextI].startPos,
+			   /*realEnd=*/ ibd2End, /*type=IBD2=*/ 2, map,
+			   sexSpecificMaps, ibdSegs);
+	if (mrcaOut)
+	  printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails, rep);
+
+	// likely another segment just after the IBD2 end, but that region must
+	// be checked against later <segs>. To ensure this is done properly, we
+	// update the startPos of the continuing segment:
+	if (segs[i].endPos == segs[i + nextI].endPos) {
+	  // corner case: both finished, increment i so that <seg[i+1]> through
+	  // <seg[i + nextI]> gets skipped (they're already printed)
+	  // NOTE: EFFECT WITH CODE JUST AFTER WHILE LOOP IS i += nextI
+	  i++;
+	  //done = true; // no need to loop (commented b/c done is true)
+	}
+	else if (segs[i].endPos > ibd2End) {
+	  // <segs[i]> continues; should increment nextI and loop:
+	  nextI++;
+	  // also update start position of <segs[i]> to exclude the printed
+	  // portion
+	  segs[i].startPos = ibd2End + 1;
+	  done = false; // loop
+	}
+	else {
+	  // <segs[i + nextI]> continues. This is the intuitive case: <i> will
+	  // increment so <segs[i + (nextI - 1) + 1]> will be considered next
+	  // (see code after the while loop). Only require that the start of
+	  // that segment doesn't include the already-printed regions
+	  segs[i + nextI].startPos = ibd2End + 1;
+	  assert(segs[i + nextI].startPos <= segs[i + nextI].endPos);
+
+	  // Annoying thing is that now segs[i + nextI], with its new start
+	  // position, may be out of order.
+	  // This loop moves it to the right position:
+	  int initI = i + nextI;
+	  for(int j = 0; initI + j + 1 < numSegs &&
+			 !compIBDRecord(segs[initI + j], segs[initI + j + 1]) &&
+			 compIBDRecord(segs[initI + j + 1], segs[initI + j]);
+			 j++) {
+	    // do the swap:
+	    IBDRecord tmp = segs[initI + j];
+	    segs[initI + j] = segs[initI + j + 1];
+	    segs[initI + j + 1] = tmp;
+	  }
+	  //done = true; // no need to loop (commented b/c done is true)
+	}
+      }
+      else {
+	// IBD1 or HBD region:
+
+	if (pedDetails.numSampsToPrint[ segs[i].otherGen ]
+				      [ segs[i].otherBranch ] <= 0)
+	  continue; // don't to print IBD segment (branch not printed)
+
+	if (gen == segs[i].otherGen && branch == segs[i].otherBranch &&
+	    ind == segs[i].otherInd) {
+	  // HBD
+	  printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, segs[i],
+			     /*realStart=standard=*/ segs[i].startPos,
+			     /*realEnd=standard=*/ segs[i].endPos,
+			     /*type=HBD=*/ 0, map, sexSpecificMaps, ibdSegs);
+	  if (mrcaOut)
+	    printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails, rep);
+	}
+	else {
+	  // IBD1
+	  printOneIBDSegment(out, pedDetails, rep, gen, branch, ind, segs[i],
+			     /*realStart=standard=*/ segs[i].startPos,
+			     /*realEnd=standard=*/ segs[i].endPos,
+			     /*type=IBD1=*/ 1, map, sexSpecificMaps, ibdSegs);
+	  if (mrcaOut)
+	    printSegFounderId(mrcaOut, segs[i].foundHapNum, pedDetails, rep);
+	}
+      }
+    } // looping over <nextI> values
+
+    i += nextI - 1; // skip the already-processed IBD records
   }
 }
 
 // Helper for printIBD(): merges adjacent IBD segments
 // If <retainFoundHap> is true, segments are only merged if they have the same
 // foundHapNum
-void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
+void mergeSegments(vector<IBDRecord> &segs, bool printHaps,
+		   bool retainFoundHap) {
   int numSegs = segs.size();
 
   int numRemoved = 0; // how many segments removed?
@@ -477,7 +508,7 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
 	  segs[i].otherBranch != segs[i + j].otherBranch ||
 	  segs[i].otherInd != segs[i + j].otherInd ||
 	  segs[i].chrIdx != segs[i + j].chrIdx)
-	// must be same other person/chromosome in order to merge
+	// must be same other person/chromosome in order to merge;
 	// due to sorting, if we encounter a different person, we know that
 	// no future segments will match
 	break;
@@ -486,7 +517,12 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
 	// subsequent segments necessarily start at least as far away
 	// because of sorting: can't merge
 	break;
-      if (segs[i].endPos + 1 == segs[i + j].startPos &&
+      if (segs[i].endPos + 1 == segs[i + j].startPos && // adjacent segments
+	  // when <printHaps>, we merge segments only if both their <hapIdx>
+	  // and <otherHapIdx> values are the same
+	  (!printHaps ||
+	   (segs[i].hapIdx == segs[i + j].hapIdx &&
+	    segs[i].otherHapIdx == segs[i + j].otherHapIdx)) &&
 	  // should merging respect founder haplotypes? if so, check:
 	  (!retainFoundHap ||
 			    segs[i].foundHapNum == segs[i + j].foundHapNum)) {
@@ -497,6 +533,7 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
       }
     }
   }
+
   // Resize <segs> post-merging
   numSegs -= numRemoved;
   segs.resize(numSegs);
@@ -505,6 +542,9 @@ void mergeSegments(vector<IBDRecord> &segs, bool retainFoundHap) {
   for(int i = 0; i < numSegs; i++) {
     assert(segs[i].otherGen != -1);
     if (i < numSegs - 1)
+      // for the segments to be sorted, either segs[i] < segs[i+1] (the first
+      // condition below) or they're equal, so !(segs[i+1] < segs[i]) (second
+      // condition)
       assert(compIBDRecord(segs[i], segs[i+1]) ||
 	     !compIBDRecord(segs[i+1], segs[i]));
   }
@@ -517,14 +557,19 @@ void printOneIBDSegment(FILE *out, SimDetails &pedDetails, int rep,
 			int gen, int branch, int ind, IBDRecord &seg,
 			int realStart, int realEnd, uint8_t ibdType,
 			GeneticMap &map, bool sexSpecificMaps,
-			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs){
+			vector<tuple<uint8_t,int,int,uint8_t,float> > *ibdSegs,
+			bool printHaps) {
   const char *ibdTypeStr[3] = { "HBD", "IBD1", "IBD2" };
 
   if (out) { // want to print the segment (if not, <ibdSegs> will be non-NULL)
     printSampleId(out, pedDetails, rep, gen, branch, ind);
+    if (printHaps)
+      fprintf(out, "\t%d", seg.hapIdx);
     fprintf(out, "\t");
     printSampleId(out, pedDetails, rep, seg.otherGen, seg.otherBranch,
 		  seg.otherInd);
+    if (printHaps)
+      fprintf(out, "\t%d", seg.otherHapIdx);
     fprintf(out, "\t");
 
     fprintf(out, "%s\t%d\t%d\t%s", map.chromName(seg.chrIdx), realStart,

@@ -246,7 +246,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 		  // print this branch?
 		  if (numSampsToPrint[curGen][branch] > 0) {
 		    hapCarriers[ foundHapNum ][ chrIdx ].emplace_back(
-			ped, rep, curGen, branch, ind, chrStart, chrEnd);
+			ped, rep, curGen, branch, ind, h, chrStart, chrEnd);
 		  }
 
 		}
@@ -331,7 +331,7 @@ int simulate(vector<SimDetails> &simDetails, Person *****&theSamples,
 				  hapCarriers,
 				  (numSampsToPrint[curGen][branch] > 0) ? ped
 									: -1,
-				  rep, curGen, branch, ind,
+				  rep, curGen, branch, ind, hapIdx,
 				  thePerson.fixedCOidxs);
 	      } // <parIdx> (simulate each transmitted haplotype for <ind>)
 	    } // <ind>
@@ -397,17 +397,17 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		       unsigned int chrIdx,
 		       vector< vector< vector<InheritRecord> > > &hapCarriers,
 		       int ped, int rep, int curGen, int branch, int ind,
-		       unsigned int fixedCOidxs[2]) {
+		       int hapIdx, unsigned int fixedCOidxs[2]) {
   // For the two haplotypes in <parent>, which segment index (in
   // parent.haps[].back()) is the current <switchMarker> position contained in?
   unsigned int curSegIdx[2] = { 0, 0 };
 
   // Pick haplotype for the beginning of the transmitted one:
-  int curHap = coinFlip(randomGen);
+  int curParentHap = coinFlip(randomGen);
 
   if (map.isX(chrIdx) && parent.sex == 0)
     // only one haplotype on X (the maternal) if the parent is male
-    curHap = 1;
+    curParentHap = 1;
 
 
   double firstcMPos = map.chromStartGenet(chrIdx, parent.sex);
@@ -481,9 +481,10 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 		      frac * (map.chromPhysPos(chrIdx, switchIdx+1) -
 					  map.chromPhysPos(chrIdx, switchIdx));
 
-      // copy Segments from <curHap>
-      copySegs(toGenerate, parent, nextSegStart, switchPos, curSegIdx, curHap,
-	       chrIdx, hapCarriers, ped, rep, curGen, branch, ind);
+      // copy Segments from <curParentHap>
+      copySegs(toGenerate, parent, nextSegStart, switchPos, curSegIdx,
+	       curParentHap, chrIdx, hapCarriers, ped, rep, curGen, branch,
+	       ind, hapIdx);
     }
 #ifndef NOFIXEDCO
   }
@@ -492,23 +493,24 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
 					   chrIdx);
 
     for(auto it = theCOs.begin(); it != theCOs.end(); it++) {
-      // copy Segments from <curHap>
+      // copy Segments from <curParentHap>
       copySegs(toGenerate, parent, nextSegStart, /*switchPos=*/ *it, curSegIdx,
-	       curHap, chrIdx, hapCarriers, ped, rep, curGen, branch, ind);
+	       curParentHap, chrIdx, hapCarriers, ped, rep, curGen, branch,
+	       ind, hapIdx);
     }
   }
 #endif // NOFIXEDCO
 
 
   // copy through to the end of the chromosome:
-  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
-							  curSegIdx[curHap]++) {
-    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
+  for( ; curSegIdx[curParentHap] < parent.haps[curParentHap][chrIdx].size();
+						    curSegIdx[curParentHap]++) {
+    Segment &seg = parent.haps[curParentHap][chrIdx][ curSegIdx[curParentHap] ];
     toGenerate.push_back(seg);
 
     if (ped >= 0) {
       hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	  ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
+	  ped, rep, curGen, branch, ind, hapIdx, nextSegStart, seg.endPos);
     }
     nextSegStart = seg.endPos + 1;
   }
@@ -520,28 +522,28 @@ void generateHaplotype(Haplotype &toGenerate, Person &parent,
   }
 }
 
-// Copies the <Segment>s between <nextSegStart> and <switchPos> from <parent>'s
-// <curHap> haplotype to <toGenerate>.
+// Copies the <Segment>s between <nextSegStart> and <switchPos> from
+// <curParentHap> haplotype to <toGenerate>.
 void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
-	      int switchPos, unsigned int curSegIdx[2], int &curHap,
+	      int switchPos, unsigned int curSegIdx[2], int &curParentHap,
 	      unsigned int chrIdx,
 	      vector< vector< vector<InheritRecord> > > &hapCarriers,
-	      int ped, int rep, int curGen, int branch, int ind) {
-  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
-							  curSegIdx[curHap]++) {
+	      int ped, int rep, int curGen, int branch, int ind, int hapIdx) {
+  for( ; curSegIdx[curParentHap] < parent.haps[curParentHap][chrIdx].size();
+						    curSegIdx[curParentHap]++) {
     if (nextSegStart > switchPos)
       // no distance to copy the segment over
       break;
-    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
+    Segment &seg = parent.haps[curParentHap][chrIdx][ curSegIdx[curParentHap] ];
     if (seg.endPos >= switchPos) {
       // last segment to copy, and we will break it at <switchPos>
       toGenerate.emplace_back(seg.foundHapNum, switchPos);
       if (seg.endPos == switchPos)
-	curSegIdx[curHap]++;
+	curSegIdx[curParentHap]++;
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, rep, curGen, branch, ind, nextSegStart, switchPos);
+	    ped, rep, curGen, branch, ind, hapIdx, nextSegStart, switchPos);
       }
       nextSegStart = switchPos + 1;
       break; // done copying
@@ -551,24 +553,24 @@ void copySegs(Haplotype &toGenerate, Person &parent, int &nextSegStart,
 
       if (ped >= 0) {
 	hapCarriers[ seg.foundHapNum ][ chrIdx ].emplace_back(
-	    ped, rep, curGen, branch, ind, nextSegStart, seg.endPos);
+	    ped, rep, curGen, branch, ind, hapIdx, nextSegStart, seg.endPos);
       }
       nextSegStart = seg.endPos + 1;
     }
   }
-  assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
+  assert(curSegIdx[curParentHap] < parent.haps[curParentHap][chrIdx].size());
 
   // swap haplotypes
-  curHap ^= 1;
-  // must update <curSegIdx[curHap]>
-  for( ; curSegIdx[curHap] < parent.haps[curHap][chrIdx].size();
-							  curSegIdx[curHap]++) {
-    Segment &seg = parent.haps[curHap][chrIdx][ curSegIdx[curHap] ];
+  curParentHap ^= 1;
+  // must update <curSegIdx[curParentHap]>
+  for( ; curSegIdx[curParentHap] < parent.haps[curParentHap][chrIdx].size();
+						    curSegIdx[curParentHap]++) {
+    Segment &seg = parent.haps[curParentHap][chrIdx][ curSegIdx[curParentHap] ];
     if (seg.endPos > switchPos)
       // current segment spans from just after <switchMarker> to <endMarker>
       break;
   }
-  assert(curSegIdx[curHap] < parent.haps[curHap][chrIdx].size());
+  assert(curSegIdx[curParentHap] < parent.haps[curParentHap][chrIdx].size());
 }
 
 // Returns the number of spouses a given generation <gen> and <branch> has
