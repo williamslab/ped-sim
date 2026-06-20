@@ -56,6 +56,9 @@ class CmdLineOpts {
     // Print the bp file?
     static int printBP; 
 
+    // Include all simulated people in the bp file?
+    static int printBPAll;
+
     // Print the MRCA of segments?
     static int printMRCA;
 
