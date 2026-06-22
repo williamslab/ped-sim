@@ -144,12 +144,14 @@ struct Person {
 // is the founder of) a given haplotype
 struct InheritRecord {
   InheritRecord() { assert(false); }
-  InheritRecord(unsigned int p, int r, int g, int b, int i, int s, int e) {
+  InheritRecord(unsigned int p, int r, int g, int b, int i, int h, int s,
+		int e) {
     ped = p;
     rep = r;
     gen = g;
     branch = b;
     ind = i;
+    hapIdx = h;
     startPos = s;
     endPos = e;
     assert(startPos <= endPos);
@@ -159,6 +161,7 @@ struct InheritRecord {
   int gen;
   int branch;
   int ind;
+  int hapIdx;
   int startPos;
   int endPos;
 
@@ -167,10 +170,13 @@ struct InheritRecord {
 
 struct IBDRecord {
   IBDRecord() { assert(false); }
-  IBDRecord(int og, int ob, int oi, int ci, int start, int end, int foundHap) {
+  IBDRecord(int h, int og, int ob, int oi, int oh, int ci, int start,
+	    int end, int foundHap) {
+    hapIdx = h;
     otherGen = og;
     otherBranch = ob;
     otherInd = oi;
+    otherHapIdx = oh;
     chrIdx = ci;
     startPos = start;
     endPos = end;
@@ -178,9 +184,11 @@ struct IBDRecord {
 
     assert(startPos <= endPos);
   }
+  int hapIdx;
   int otherGen;
   int otherBranch;
   int otherInd;
+  int otherHapIdx;
   int chrIdx;
   int startPos;
   int endPos;
