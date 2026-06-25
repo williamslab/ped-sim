@@ -8,7 +8,7 @@
 #define CMDLINEOPTS_H
 
 #define VERSION_NUMBER	"1.4.7"
-#define RELEASE_DATE	"TODO"
+#define RELEASE_DATE	"25 Jun 2026"
 
 class CmdLineOpts {
   public:
