@@ -20,6 +20,7 @@ char  *CmdLineOpts::outPrefix = NULL;
 bool   CmdLineOpts::autoSeed = true;
 unsigned int CmdLineOpts::randSeed;
 int    CmdLineOpts::dryRun = 0;
+int    CmdLineOpts::printSegHaps = 0;
 int    CmdLineOpts::printFam = 0;
 int    CmdLineOpts::printBP = 0;
 int    CmdLineOpts::printBPAll = 0;
@@ -64,6 +65,7 @@ bool CmdLineOpts::parseCmdLineOptions(int argc, char **argv) {
     {"seed", required_argument, NULL, RAND_SEED},
     {"sexes", required_argument, NULL, SEXES},
     {"dry_run", no_argument, &CmdLineOpts::dryRun, 1},
+    {"seg_haps", no_argument, &CmdLineOpts::printSegHaps, 1},
     {"fam", no_argument, &CmdLineOpts::printFam, 1},
     {"bp", no_argument, &CmdLineOpts::printBP, 1},
     {"bp_all", no_argument, &CmdLineOpts::printBPAll, 1},
@@ -344,6 +346,7 @@ void CmdLineOpts::printUsage(FILE *out, char *programName) {
   fprintf(out, "\t\t\t  required if the input VCF contains X chromosome data\n");
   fprintf(out, "\t\t\t  (otherwise data for the X chromosome is not output and\n");
   fprintf(out, "\t\t\t   founder genotypes are assigned irrespective of sex)\n");
+  fprintf(out, "  --seg_haps\t\tprint haplotype-resolved segments in .seg file\n");
   fprintf(out, "  --fam\t\t\tprint PLINK fam file (see README.md before use)\n");
   fprintf(out, "  --bp\t\t\tprint BP file (complete haplotype transmission info)\n");
   fprintf(out, "  --bp_all\t\tprint BP file with all simulated individuals\n");
