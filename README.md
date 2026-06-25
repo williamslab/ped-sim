@@ -806,8 +806,8 @@ the simulated individual, the sex of that person, either `s0` for male or `s1`
 for female, the haplotype that line describes, `h0` or `h1`, and then a
 variable number of segments for each chromosome.
 
-To print BP output for every simulated person in the pedigree rather than only
-the printed individuals, use for example:
+To print BP output for every simulated individual in the pedigree rather than
+only the printed individuals, use for example:
 
     ./ped-sim -d example/second_deg.def -m refined_mf.simmap \
       -o output --pois --bp_all
